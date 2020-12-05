@@ -1,0 +1,66 @@
+---
+title: *Cepaea* polymorphism and parasites
+author: "Armelle Ansart, Claudia Gérard, Marine Proux, Maxime Dahirel (this code by M. Dahirel)"
+date:
+output: 
+  html_document:
+    theme: yeti
+    toc: TRUE
+    toc_float: TRUE
+editor_options:
+  chunk_output_type: console
+bibliography:
+csl:
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE, message = FALSE)
+```
+
+
+# A brief introduction
+
+<!--to do-->
+
+# Part 1 : Preparation
+
+## 1A - packages
+
+```{r packages-loading}
+library(rstan) ## Stan backend
+#library(cmdstanr) ## Stan backend (another)
+library(brms) ## the interface we are using
+
+library(tidyverse)
+library(bayesplot)
+library(tidybayes)
+library(matrixStats)
+
+library(QGglmm) ## this package is needed to help convert variance-covariance matrices from latent to data scale
+
+library(patchwork) #plotting
+
+library(here)
+
+## some useful default settings
+rstan_options(auto_write = TRUE) #for rstan
+options(mc.cores = 2) ## reduce/increase depending on cores available
+N_chains <- 4
+N_warmup <- 100 
+N_iter <- N_warmup + 100 
+```
+
+
+## 1B – data loading and wrangling
+
+```{r data-load}
+data_behaviour <- read_csv(here("data","cepaea_2019_behaviour.csv"))
+data_parasite <- read_csv(here("data","cepaea_2019_parasite.csv"))
+```
+
+
+```{r}
+
+```
+
