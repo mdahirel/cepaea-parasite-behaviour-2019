@@ -61,10 +61,18 @@ data_parasite <- read_csv(here("data","cepaea_2019_parasite.csv"))
 
 
 ```{r}
+#### don't forget removing the dead one when relevant
 data_para<-data_parasite %>% 
   mutate(Nematode_live_all = data_parasite %>% select(Nematode_0_1_free:Nematode_5_plus_lung) %>% rowSums()) %>% 
   mutate(Nematode_encaps_all = Nematode_white_encaps + Nematode_dark_encaps) %>% 
-  mutate(is.infected = (Nematode_live_all > 0 | Trematode_kidney > 0))
+  mutate(is.infected = as.numeric(Nematode_live_all > 0 | Trematode_kidney > 0 |Acari_kidney>0 |Acari_digestive>0))
+
+
+mod <- brm(is.infected~ 0 + band_number : population + (1|group),family=bernoulli, 
+           data=data_para,
+        chains=4,iter=2000,warmup=1000,
+        prior=c(set_prior("normal(0,1.5)",class="b"),
+                set_prior("normal(0,1)", class="sd")))
 
 
 mod <- brm(Nematode_live_all~ 0 + band_number + (1|group),family=negbinomial, 
@@ -84,22 +92,43 @@ mod <- brm(Trematode_kidney~ 0 + band_number + population + (1|group),family=neg
 ```{r}
 data <- data_behaviour %>% 
   left_join(data_para) %>% 
-  mutate(FPT = FPT3 ) %>% ## !!! need to remove the starting time
-  mutate(mvt_censored = as.numeric(FPT3==1200)) %>% 
-  #mutate(FPT = replace(FPT, which(FPT == 0),1)) %>% 
+  mutate(FPT = 5/(FPT2 - FPT1)) %>% ## !!! need to remove the starting time
+  mutate(mvt_censored = as.numeric(FPT2==1200)) %>% 
+  mutate(FPT = replace(FPT, which(FPT2 == 1200),5/1200)) %>% 
   mutate(Food_intake = round(Food_intake,3)) %>% 
   mutate(food = replace(Food_intake, which(Food_intake<=0.001),0.001)) %>% 
   mutate(food_censored = -1 * (food<=0.001))
 
-bf_mvt <- bf(FPT|cens(mvt_censored)~ 0 + band_number + band_number:is.infected + (1|group) + (1|p|fullID),
-             sigma ~ 0 + band_number + band_number:is.infected,family=lognormal)
-bf_food <- bf(food/2|cens(food_censored)~ 0 +  band_number + band_number:is.infected + (1|group) + (1|p|fullID),family=Beta)
+bf_mvt <- bf(FPT|cens(-mvt_censored)~ 1 + (1|group) + (1|p|fullID),family=lognormal)
+bf_food <- bf(food/2|cens(food_censored)~ 1 + (1|group) + (1|p|fullID),family=Beta)
+bf_nema <- bf(Nematode_live_all|subset(session==1)~ 1 + (1|group) + (1|p|fullID),family=poisson)
+bf_trema <- bf(Trematode_kidney|subset(session==1)~ 1 + (1|group) + (1|p|fullID),family=poisson)
 
-mod=brm(mvbf(bf_mvt+bf_food),data=data,
+
+
+mod=brm(mvbf(bf_mvt+bf_food+bf_nema+bf_trema),data=data,
         chains=4,iter=2000,warmup=1000,
         seed=42,
-        prior = c(set_prior("normal(0,1)",class="b",resp=c("FPT","food2")),
-                  set_prior("normal(0,1)",class="sd",resp=c("FPT","food2")), 
+        prior = c(set_prior("normal(0,1)",class="Intercept",resp=c("FPT","food2","Nematodeliveall","Trematodekidney")),
+                  set_prior("normal(0,1)",class="sd",resp=c("FPT","food2","Nematodeliveall","Trematodekidney")), 
+                  set_prior("lkj(2)",class="cor"))
+)
+```
+
+
+```{r}
+data2 <- data %>% 
+  pivot_longer(FPT1:FPT3) %>% 
+  mutate(dist=2*(name=="FPT1")+10*(name=="FPT2")+20*(name=="FPT3"))
+
+bf_mvt <- bf(value|cens(value>=1200) ~ (band_number + band_number:is.infected)*dist + (1|group) + (dist|p|fullID),family=lognormal)
+bf_food <- bf(food/2|subset(dist==2)+cens(food_censored)~ 0 +  band_number + band_number:is.infected + (1|group) + (1|p|fullID),family=Beta)
+
+mod=brm(mvbf(bf_mvt+bf_food),data=data2,
+        chains=4,iter=2000,warmup=1000,
+        seed=42,
+        prior = c(set_prior("normal(0,1)",class="b",resp=c("value","food2")),
+                  set_prior("normal(0,1)",class="sd",resp=c("value","food2")), 
                   set_prior("lkj(2)",class="cor"))
 )
 ```
