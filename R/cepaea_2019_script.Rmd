@@ -23,11 +23,6 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE, message = FALSE)
 
 <!--to do-->
 
-"Nematode, but not trematode, infection negatively affect Cepaea nemoralis activity"
-good, but miss the morph effect
-"Nematode infection is morph-dependent and negatively affect Cepaea nemoralis behaviour"
-good but miss the trematode presence and its absence of effect
-
 # Part 1 : Preparation
 
 ## 1A - packages
@@ -140,23 +135,48 @@ mod_size <-brm(bf(scale_size|subset(session==1) ~ is.shaded * ( band_number + fu
 ## pattern same in old cornu data (arcaisCornupheno in phd folder) intermediate vs ferme, ouvert is vineyard (no cepaea there), so something cross specific and cross temp
 ```
 
-"in addition to our variables of interest, we collected data on total body mass at marking (including shell), shell mass, whether encapsulated nematodes were found in darker or clearer parts of the shell, and how sorted live nematodes into rough size classes and locations. These ancillary data are not used in analyses, but made available along variables of interest in online dataset, for completion's sake."
+```{r}
+data %>% 
+  select(population,band_number, is.shaded) %>% 
+  distinct() %>% 
+  mutate(scale_size=0, session=1, FPT1=0,fusion="no") %>% 
+  add_fitted_draws(mod,re_formula=NA,resp="mvt") %>% 
+  ggplot() +
+  stat_eye(aes(band_number,.value,fill=population),position="dodge",slab_alpha=0.7)+
+  coord_cartesian(ylim=c(-2,4))
 
-idea that no nematode in shaded, nematodes in sun: seasonality?
-certainly not absence since nematodes found in shells at similar proportion in both
-nematodes when present seem to depend on morph, in ways consistent with melanin immunity effect (but band not melanin, and 0 fusion effect)
-nematodes have individual effect on behaviour, but not trematodes? immunity? life history
 
-discuss (non)implication of no association bw trematode and shell for selection by birds and bird-snail-parasite interactions
+ggplot() +
+  geom_line(data=subset(data,FPT1<1200),aes(x = as.numeric(factor(band_number))+0.25*session-0.5-0.4*is.shaded,col=population, y=mvt, group=fullID), show.legend = FALSE,alpha=0.4) +
+  geom_point(data=subset(data,FPT1<1200),aes(x = as.numeric(factor(band_number))+0.25*session-0.5-0.4*is.shaded,col=population, y=mvt), show.legend = FALSE,alpha=0.4)+
+  coord_cartesian(ylim=c(-2,4))
+```
 
-morph level effect: intersting to see that when going from non-infected to infected pop, 5band don't chnage their behaviour
-but 0 band become less mobile
+```{r}
+data %>% 
+  select(band_number, is.shaded) %>% 
+  distinct() %>% 
+  mutate(scale_size=0, session=1, FPT1=0,fusion="no", population="sun_exposed") %>% 
+  add_fitted_draws(mod,re_formula=NA,resp="Nematodeliveall") %>%  ## but re_formula NA not right for poisson ORLE, right? at least not for mean
+  ungroup() %>% 
+  ggplot() +
+  stat_eye(aes(band_number,.value),slab_alpha=0.7)+
+  geom_point(data=data %>% filter(session==1),aes(band_number,Nematode_live_all),alpha=0.5,position=position_jitter(height=0))
+```
 
-more feeding in shaded, consistent with correlation feeding-nematode in sun exposed :)
+```{r}
+data %>% 
+  select(band_number, is.shaded,population) %>% 
+  distinct() %>% 
+  mutate(session=1, FPT1=0,fusion="no") %>%
+  expand_grid(scale_size=c(-30:30)/10) %>% 
+  add_fitted_draws(mod,re_formula=NA,resp="food") %>%  ## but re_formula NA not right for poisson ORLE, right? at least not for mean
+  ungroup() %>% 
+  ggplot() +
+  stat_lineribbon(aes(scale_size,.value,fill=population),.width=c(0.01,0.95))+
+  geom_point(data=data,aes(scale_size, food,col=population),alpha=0.5)+
+  facet_wrap(~population)
+```
 
-confounding pop and infection, more study to do cross pop and cross season
-why no effect of pop in previous cepaea on same site: seasonaility: snails in prevous paper kept much longer in lab, and it appears that snails can clear nematodes effectively with time (given absence in shaded now)
++ figure trematode to do + individual level correlation grid
 
-suggestion: experiment on snails directly from field at several times of the year (seasonaility of infection)
-confirm that stay in lab can clear parasite with time
-use experimental infection (look at lit on cepaea/phasmarhab)
