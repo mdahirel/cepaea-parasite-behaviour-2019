@@ -79,7 +79,6 @@ data<-left_join(data_behaviour,data_para) %>%
 ## individuals with fpt1>=1200 are NOT active, so should not count towards mvt model
 ## is time to activity itself actually a relevant variable? NO (not stdised in the petri to, table phase, just let them habituate until they move)
 
-
 bf_trema<-bf(Trematode_kidney|subset(session==1) ~ is.shaded * ( band_number + fusion) + scale_size + (1|series)+(1|q|fullID),family=poisson)
 bf_nemaL<-bf(Nematode_live_all|subset(session==1 & population=="sun_exposed") ~ band_number + fusion + scale_size + (1|series)+(1|q|fullID),family=poisson)
 bf_food<-bf(food ~  is.shaded * (band_number + fusion) + scale_size + (1|series)+(1|q|fullID))
