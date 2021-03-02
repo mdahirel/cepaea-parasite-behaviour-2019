@@ -44,7 +44,7 @@ library(patchwork) #plotting
 library(here)
 
 ## some useful default settings
-rstan_options(auto_write = TRUE) #for rstan
+#rstan_options(auto_write = TRUE) #for rstan
 options(mc.cores = 4) ## reduce/increase depending on cores available
 N_chains <- 4
 N_warmup <- 2000 
@@ -77,87 +77,24 @@ data <- left_join(raw_behaviour,data_parasite) %>%
   filter(dead==0) %>% 
   #remove the dead individual from the dataset 
   #!!THIS IS THE ONE WITH THE MOST NEMATODES BY FAR (102), this is natural history info to not forget
-  #we then standardize covariates and responses
+  #we then standardize covariates
   mutate(is.shaded = as.numeric(population=="shaded")-mean(as.numeric(population=="is.shaded")),
-         scale_food = scale(Food_intake)[,1],
          scale_size = scale(shell_diameter)[,1])
 ```
-
-# Testing model specs
-
-## the movement model
-
-FPT1 is the time to initiate activity, so our movement time is FPT3 - FPT1, and any snail that has FPT1==1200 did not move, so no valid movement value
 
 
 ```{r data-prep-mvt}
 #we then define our movement variable
 data_test <- data %>% 
   mutate(has.moved = FPT1 < 1200) %>% 
-  mutate(mvt = FPT3-FPT1)
-  #mutate(mvt = (1/(FPT3-FPT1))) %>% 
+  mutate(mvt = (1/(FPT3-FPT1))) %>% 
   #mutate(mvt = replace(mvt,which(has.moved == FALSE),0)) %>% 
   #mutate(mvt = scale(mvt)[,1])  ##first approx, include inactive in estimates of scaling
 ## individuals with fpt1>=1200 are NOT active, so should not count towards mvt model
 ## is time to activity itself actually a relevant variable? NO (not stdised in the petri to, table phase, just let them habituate until they move)
 ```
 
-let's try to fit a simple model with this movement variable. movement data is time, so a lognormal model should be right-ish, no?:
-
-```{r}
-mod_mvt_test <- brm(
-  bf(mvt|subset(has.moved==TRUE) + ## we exclude non-moving snails 
-         cens(mvt>=1200) ~ is.shaded * (band_number + fusion) + 
-    scale_size + (1|series)+(1|fullID)), family=lognormal,
-    data=data_test, chains=4,iter=2000,warmup=1000,
-    prior=c(set_prior("normal(0,1)",class="Intercept"), # priors are probably bad but this is just for testing
-                set_prior("normal(0,1)",class="b"),
-                set_prior("normal(0,1)", class="sd"),
-                set_prior("normal(0,1)",class="sigma")),
-        backend="cmdstanr",seed=42,control=list(adapt_delta=0.99,max_treedepth=15))
-```
-
-```{r}
-newdata <- subset(data_test, has.moved ==TRUE)
-ppc_ribbon(
-  yrep = (predict(mod_mvt_test, newdata=newdata, summary = FALSE)),
-  x = rank(predict(mod_mvt_test, newdata=newdata)[, 1]),
-  y = newdata$mvt,
-  prob = 0.5, prob_outer = 0.95
-)
-```
-
-fairly easy to see that this model is rubbish and doesn't even come close to capturing the very slow individuals, even with individual-level random effects. Changing distributions (not shown) does not solve the problem. Let's try something else, by inverting the movement variable, so that it becomes something closer to a speed:
-
-```{r}
-data_test$mvt2=1/data_test$mvt
-
-mod_mvt_test2 <- brm(
-  bf(mvt2|subset(has.moved==TRUE) + ## we exclude non-moving snails 
-         cens(- 1*(mvt>=1200)) ~ # because the mvt metric is inversed, the censure is too (right- to left-) 
-       is.shaded * (band_number + fusion) + 
-    scale_size + (1|series)+(1|fullID)),
-    data=data_test, chains=4,iter=2000,warmup=1000,
-    prior=c(set_prior("normal(0,1)",class="Intercept"),
-                set_prior("normal(0,1)",class="b"),
-                set_prior("normal(0,1)", class="sd"),
-                set_prior("normal(0,1)",class="sigma")),
-        backend="cmdstanr",seed=42,control=list(adapt_delta=0.99,max_treedepth=15))
-```
-
-```{r}
-newdata <- subset(data_test, has.moved ==TRUE)
-ppc_ribbon(
-  yrep = (predict(mod_mvt_test2, newdata=newdata, summary = FALSE)),
-  x = rank(predict(mod_mvt_test2, newdata=newdata)[, 1]),
-  y = newdata$mvt2,
-  prob = 0.5, prob_outer = 0.95
-)
-```
-
-seems to behave much much better. We'll thus analyse movement as 1/time in the final model.
-
-
+See the model tests script for why we choose these transformations for movement and food intake data
 
 # model 
 
