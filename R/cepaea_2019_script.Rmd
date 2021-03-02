@@ -36,9 +36,6 @@ library(tidyverse)
 library(bayesplot)
 library(tidybayes)
 library(matrixStats)
-
-library(QGglmm) ## this package is needed to help convert variance-covariance matrices from latent to data scale
-
 library(patchwork) #plotting
 
 library(here)
@@ -63,7 +60,7 @@ raw_parasite <- read_csv(here("data","cepaea_2019_parasite.csv"))
 ```{r data-prep}
 #### don't forget removing the dead one when relevant
 data_parasite<-raw_parasite %>% 
-  mutate(Nematode_live_all = data_parasite %>% 
+  mutate(Nematode_live_all = raw_parasite %>% 
            select(c(Nematode_0_1_free, Nematode_1_3_free, 
                     Nematode_3_5_free, Nematode_5_plus_free, 
                     Nematode_1_3_lung, Nematode_3_5_lung, 
@@ -79,18 +76,27 @@ data <- left_join(raw_behaviour,data_parasite) %>%
   #!!THIS IS THE ONE WITH THE MOST NEMATODES BY FAR (102), this is natural history info to not forget
   #we then standardize covariates
   mutate(is.shaded = as.numeric(population=="shaded")-mean(as.numeric(population=="is.shaded")),
-         scale_size = scale(shell_diameter)[,1])
+         scale_size = scale(shell_diameter)[,1]) %>% 
+  mutate(mean_food=mean(Food_intake,na.rm=TRUE),
+         sd_food=sd(Food_intake,na.rm=TRUE)) %>% 
+  mutate(scale_food = scale(Food_intake)[,1])
 ```
 
 
 ```{r data-prep-mvt}
 #we then define our movement variable
-data_test <- data %>% 
-  mutate(has.moved = FPT1 < 1200) %>% 
+data <- data %>% 
+  mutate(FPT1 = FPT1/60, ## let's just convert them to minutes
+         FPT2 = FPT2/60,
+         FPT3 = FPT3/60) %>% 
+  mutate(has.moved = FPT1 < 20) %>% 
   mutate(mvt = (1/(FPT3-FPT1))) %>% 
-  #mutate(mvt = replace(mvt,which(has.moved == FALSE),0)) %>% 
-  #mutate(mvt = scale(mvt)[,1])  ##first approx, include inactive in estimates of scaling
-## individuals with fpt1>=1200 are NOT active, so should not count towards mvt model
+  mutate(mvt = replace(mvt,which(has.moved == FALSE),0)) %>% 
+  # put a zero for the ones that don't move
+  mutate(mean_mvt = mean(subset(mvt,has.moved ==TRUE)), ##mean and sd for scaling
+         sd_mvt = sd(subset(mvt,has.moved ==TRUE))) %>% ## exclude not moving individuals
+  mutate(scale_mvt = (mvt - mean_mvt)/sd_mvt)
+## individuals with fpt1>=20 minutes are NOT active, so should not count towards mvt model
 ## is time to activity itself actually a relevant variable? NO (not stdised in the petri to, table phase, just let them habituate until they move)
 ```
 
@@ -99,32 +105,51 @@ See the model tests script for why we choose these transformations for movement 
 # model 
 
 ```{r}
-bf_trema<-bf(Trematode_kidney|subset(session==1) ~ is.shaded * ( band_number + fusion) + scale_size + (1|series)+(1|q|fullID),family=poisson)
-bf_nemaL<-bf(Nematode_live_all|subset(session==1 & population=="sun_exposed") ~ band_number + fusion + scale_size + (1|series)+(1|q|fullID),family=poisson)
-bf_food<-bf(food ~  is.shaded * (band_number + fusion) + scale_size + (1|series)+(1|q|fullID))
-bf_mvt<-bf(mvt|subset(FPT1 < 1200) + cens(-1*(FPT3>=1200)) ~  is.shaded * (band_number + fusion) + scale_size + (1|series)+(1|q|fullID))
+bf_trema<-bf(
+  Trematode_kidney|subset(session==1) ~ 
+    is.shaded * ( band_number + fusion) + scale_size + 
+    (1|series)+(1|q|fullID),
+  family=poisson)
+
+bf_nema_live<-bf(
+  Nematode_live_all|subset(session==1 & population=="sun_exposed") ~ 
+    band_number + fusion + scale_size + 
+    (1|series)+(1|q|fullID),
+  family=poisson)
+
+bf_food<-bf(scale_food ~  is.shaded * (band_number + fusion) + scale_size + 
+              (1|series)+(1|q|fullID))
+
+bf_mvt<-bf(
+  scale_mvt|subset(has.moved==TRUE) + cens(-1*(FPT3>=20)) ~  
+    is.shaded * (band_number + fusion) + scale_size + 
+    (1|series)+(1|q|fullID))
 
 ##group column is actually just lettercode, worth renaming removing?
 ## true grouping variable is series, snails boxed by band*landscape, 10 of each taken in series, then replaced in box before second test
 
-mod<-brm(mvbf(bf_food+bf_trema+bf_nemaL+bf_mvt),
+mod<-brm(mvbf(bf_food+bf_trema+bf_nema_live+bf_mvt),
            data=data,
         chains=4,iter=2000,warmup=1000,
         prior=c(set_prior("normal(0,1)",class="Intercept",resp=c("Trematodekidney","Nematodeliveall")),
-                set_prior("normal(0,1)",class="Intercept",resp=c("food","mvt")),
-                set_prior("normal(0,1)",class="b",resp=c("Trematodekidney","Nematodeliveall","food","mvt")),
-                set_prior("normal(0,1)", class="sd",resp=c("Trematodekidney","Nematodeliveall","food","mvt")),
+                set_prior("normal(0,1)",class="Intercept",
+                          resp=c("scalefood","scalemvt")),
+                set_prior("normal(0,1)",class="b",
+                          resp=c("Trematodekidney","Nematodeliveall","scalefood","scalemvt")),
+                set_prior("normal(0,1)", class="sd",
+                          resp=c("Trematodekidney","Nematodeliveall","scalefood","scalemvt")),
                 #set_prior("constant(0.01)",class="sigma",resp="scalesize"),
-                set_prior("normal(0,1)",class="sigma",resp=c("mvt","food")),
+                set_prior("normal(0,1)",class="sigma",resp=c("scalemvt","scalefood")),
                 set_prior("lkj(2)",class="cor")),
         backend="cmdstanr",seed=42,control=list(adapt_delta=0.99,max_treedepth=10))
+```
 
-## what about rescor between food and mvt if gaussian
-## two reasons not possible: for rescor, all traits need to be gaussian in the multivar model
-## if i do a sep model with just food and mvt, error because rescor doesn't allow for cens or subset aterms (only se mi and weights)
 
+```{r}
 ### for enkysted nematodes: cannot analyse total N because probably accrue with age, which we do not know here
-### compare proportion of in black versus in white would probs need to know actual surface of each (+ bias towards trapping close to opening, where more black), so just natural history and evidence that nematodes are present in marais, just not when we sampled (seasonality?)
+### to compare proportion of in black versus in white would probs need to know actual surface of each (+ bias towards trapping close to opening, where more black), 
+
+### so what we can do: use presence absence data as just natural history and evidence that nematodes are present in marais, just not when we sampled (seasonality?)
 
 data_para$is.shaded = as.numeric(data_para$population=="shaded")-mean(as.numeric(data_para$population=="is.shaded"))
 data_para$scale_size = scale(data_para$shell_diameter)[,1]
@@ -155,47 +180,119 @@ mod_size <-brm(bf(scale_size|subset(session==1) ~ is.shaded * ( band_number + fu
 ```
 
 ```{r}
-data %>% 
-  select(population,band_number, is.shaded) %>% 
+preds_mvt <- data %>% 
+  select(population,band_number, is.shaded,mean_mvt,sd_mvt) %>% 
   distinct() %>% 
-  mutate(scale_size=0, session=1, FPT1=0,fusion="no") %>% 
-  add_fitted_draws(mod,re_formula=NA,resp="mvt") %>% 
-  ggplot() +
-  stat_eye(aes(band_number,.value,fill=population),position="dodge",slab_alpha=0.7)+
-  coord_cartesian(ylim=c(-2,4))
+  mutate(scale_size=0, session=1, FPT3=0, FPT1=0,fusion="no",has.moved=TRUE) %>% 
+  add_fitted_draws(mod,re_formula=NA,resp="scalemvt") %>% 
+  mutate(.value=.value*sd_mvt + mean_mvt)
 
 
-ggplot() +
-  geom_line(data=subset(data,FPT1<1200),aes(x = as.numeric(factor(band_number))+0.25*session-0.5-0.4*is.shaded,col=population, y=mvt, group=fullID), show.legend = FALSE,alpha=0.4) +
-  geom_point(data=subset(data,FPT1<1200),aes(x = as.numeric(factor(band_number))+0.25*session-0.5-0.4*is.shaded,col=population, y=mvt), show.legend = FALSE,alpha=0.4)+
-  coord_cartesian(ylim=c(-2,4))
-```
+p_mvt <- ggplot(subset(data,has.moved==TRUE)) +
+    geom_point(aes(band_number,mvt,col=population,group=session),position=position_dodge(width=1))+
+    geom_line(aes(as.numeric(factor(band_number))+0.5*session-0.75,mvt,col=population,group=fullID))+
+    stat_eye(data=preds_mvt,aes(band_number,.value,fill=population),
+           .width=c(0.01,0.95),slab_alpha=0.7)+
+  scale_y_continuous("Movement speed (unit/min)")+
+  scale_x_discrete("Shell phenotype (band number)")+
+    facet_wrap(~population)
 
-```{r}
-data %>% 
-  select(band_number, is.shaded) %>% 
+
+
+preds_food <- data %>% 
+  select(population,band_number, is.shaded,mean_food,sd_food) %>% 
   distinct() %>% 
-  mutate(scale_size=0, session=1, FPT1=0,fusion="no", population="sun_exposed") %>% 
+  mutate(scale_size=0, session=1,fusion="no") %>% 
+  add_fitted_draws(mod,re_formula=NA,resp="scalefood") %>% 
+  mutate(.value=.value*sd_food + mean_food)
+
+p_food <- ggplot(data) +
+    geom_point(aes(band_number,Food_intake,col=population,group=session),position=position_dodge(width=1))+
+    geom_line(aes(as.numeric(factor(band_number))+0.5*session-0.75,Food_intake,col=population,group=fullID))+
+    stat_eye(data=preds_food,aes(band_number,.value,fill=population),
+           .width=c(0.01,0.95),slab_alpha=0.7)+
+  scale_y_continuous("Food intake (g/night)")+
+  scale_x_discrete("Shell phenotype (band number)")+
+    facet_wrap(~population)
+
+p_mvt/p_food & theme(legend.position="none")
+
+preds_nematode <- data %>% 
+  select(band_number) %>% 
+  distinct() %>% 
+  mutate(scale_size=0, session=1,fusion="no", population="sun_exposed") %>% 
   add_fitted_draws(mod,re_formula=NA,resp="Nematodeliveall") %>%  ## but re_formula NA not right for poisson ORLE, right? at least not for mean
-  ungroup() %>% 
-  ggplot() +
-  stat_eye(aes(band_number,.value),slab_alpha=0.7)+
-  geom_point(data=data %>% filter(session==1),aes(band_number,Nematode_live_all),alpha=0.5,position=position_jitter(height=0))
+  ungroup()
+
+p_nema <- ggplot(subset(data_parasite,dead==0)) +
+  geom_jitter(aes(band_number,Nematode_live_all,col=population),height=0)+
+  stat_eye(data=preds_nematode, aes(band_number,.value),slab_alpha=0.7)+
+  scale_y_continuous("Nematodes")+
+  scale_x_discrete("Shell phenotype (band number)")+
+  facet_wrap(~population)
+
+preds_trematode <- data %>% 
+  select(band_number,is.shaded,population) %>% 
+  distinct() %>% 
+  mutate(scale_size=0, session=1,fusion="no") %>% 
+  add_fitted_draws(mod,re_formula=NA,resp="Trematodekidney") %>%  ## but re_formula NA not right for poisson ORLE, right? at least not for mean
+  ungroup()
+
+p_trema <- ggplot(subset(data_parasite,dead==0)) +
+  geom_jitter(aes(band_number,Trematode_kidney,col=population),height=0)+
+  stat_eye(data=preds_trematode, aes(band_number,.value),slab_alpha=0.7)+
+  scale_y_continuous("Trematodes in kidney") +
+  scale_x_discrete("Shell phenotype (band number)")+
+  facet_wrap(~population)
+
+p_nema/p_trema & theme(legend.position="none")
+
+```
+
+absence of effect of trematodes may be due to rarity in overall population (what happens in more infected pops, see refs)
+
+no need of complex stuff for repeatabilities, the two repeatable traits are gaussian here
+
+```{r}
+## expressed on scale components but OK because we plot % of variance
+varcomps_mvt <- tibble(
+  VF = rowVars(posterior_linpred(mod, re_formula = NA,resp="scalemvt")),
+  VI = VarCorr(mod,summary=FALSE)$fullID$sd[,"scalemvt_Intercept"]^2,
+  Vseries = VarCorr(mod,summary=FALSE)$series$sd[,"scalemvt_Intercept"]^2,
+  VR =(posterior_samples(mod,pars="sigma_scalemvt")[,1])^2
+) %>% 
+mutate(trait="mvt",
+       VP = VF + VI + Vseries + VR)
+
+varcomps_food <- tibble(
+  VF = rowVars(posterior_linpred(mod, re_formula = NA,resp="scalefood")),
+  VI = VarCorr(mod,summary=FALSE)$fullID$sd[,"scalefood_Intercept"]^2,
+  Vseries = VarCorr(mod,summary=FALSE)$series$sd[,"scalefood_Intercept"]^2,
+  VR =(posterior_samples(mod,pars="sigma_scalefood")[,1])^2
+) %>% 
+mutate(trait="food",
+       VP = VF + VI + Vseries + VR)
+
+rbind(varcomps_food,varcomps_mvt) %>% 
+  group_by(trait) %>% 
+  pivot_longer(cols=c(VF, VI, Vseries, VR),names_to = "varcomp" , values_to = "variance") %>% 
+  ggplot()+
+  stat_halfeye(aes(y=varcomp,x=100*variance/VP),
+                point_interval = mean_hdi,.width = c(0.001,0.95),
+                normalize="xy")+
+  facet_wrap(~trait)+
+  scale_x_continuous(name="Variance explained (%, observed scale)", lim=c(0,100),
+                     breaks=seq(from=0,to=100,by=10))+
+  scale_y_discrete(name="Variance component") +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95",colour.minor = "grey95")
+  
 ```
 
 ```{r}
-data %>% 
-  select(band_number, is.shaded,population) %>% 
-  distinct() %>% 
-  mutate(session=1, FPT1=0,fusion="no") %>%
-  expand_grid(scale_size=c(-30:30)/10) %>% 
-  add_fitted_draws(mod,re_formula=NA,resp="food") %>%  ## but re_formula NA not right for poisson ORLE, right? at least not for mean
-  ungroup() %>% 
-  ggplot() +
-  stat_lineribbon(aes(scale_size,.value,fill=population),.width=c(0.01,0.95))+
-  geom_point(data=data,aes(scale_size, food,col=population),alpha=0.5)+
-  facet_wrap(~population)
+VarCorr(mod)$fullID$cov
 ```
 
-+ figure trematode to do + individual level correlation grid
+
+ + individual level correlation grid to do
 

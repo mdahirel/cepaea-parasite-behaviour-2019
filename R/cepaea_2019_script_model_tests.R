@@ -56,7 +56,8 @@ ppc_ribbon(
 # fairly easy to see that this model is rubbish 
 # and doesn't even come close to capturing the very slow individuals, 
 # even with individual-level random effects and fixed covariates. 
-# Changing distributions for e.g. gamma or others (not shown) does not solve the problem. 
+# Changing distributions for e.g. gamma or others recommended for time-to-event (not shown) 
+# does not solve the problem. 
 # Let's try something else, by inverting the movement variable, so that it becomes something closer to a speed:
 
 
@@ -122,6 +123,9 @@ ppc_ribbon(
 )
 ## looks good?
 pp_check(mod_food_test) # ah nope looks bad, predicts an excess of low high values
+# not shown: just ignoring the high boundary and saying "let's just do a lognormal"
+# gives even worse results (unless we put a very strong prior on sigma???)
+
 
 # so let's just try to scale the raw values and put that in a gaussian?
 data_test <- data_test %>% 
