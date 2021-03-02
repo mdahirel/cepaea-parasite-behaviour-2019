@@ -45,40 +45,123 @@ library(here)
 
 ## some useful default settings
 rstan_options(auto_write = TRUE) #for rstan
-options(mc.cores = 2) ## reduce/increase depending on cores available
+options(mc.cores = 4) ## reduce/increase depending on cores available
 N_chains <- 4
-N_warmup <- 100 
-N_iter <- N_warmup + 100 
+N_warmup <- 2000 
+N_iter <- N_warmup + 2000 
 ```
 
 
 ## 1B – data loading and wrangling
 
 ```{r data-load}
-data_behaviour <- read_csv(here("data","cepaea_2019_behaviour.csv"))
-data_parasite <- read_csv(here("data","cepaea_2019_parasite.csv"))
+raw_behaviour <- read_csv(here("data","cepaea_2019_behaviour.csv"))
+raw_parasite <- read_csv(here("data","cepaea_2019_parasite.csv"))
 ```
 
 
-```{r}
+```{r data-prep}
 #### don't forget removing the dead one when relevant
-data_para<-data_parasite %>% 
-  mutate(Nematode_live_all = data_parasite %>% select(Nematode_0_1_free:Nematode_5_plus_lung) %>% rowSums()) %>% 
+data_parasite<-raw_parasite %>% 
+  mutate(Nematode_live_all = data_parasite %>% 
+           select(c(Nematode_0_1_free, Nematode_1_3_free, 
+                    Nematode_3_5_free, Nematode_5_plus_free, 
+                    Nematode_1_3_lung, Nematode_3_5_lung, 
+                    Nematode_5_plus_lung)) %>% 
+           rowSums()) %>% 
   mutate(Nematode_encaps_all = Nematode_white_encaps + Nematode_dark_encaps)
 
 
 
-data<-left_join(data_behaviour,data_para) %>% 
-  filter(dead==0) %>% #remove the dead individual from the dataset THIS IS THE ONE WITH THE MOST NEMATOD BY FAR (102), this is NAT HISTORY INFO
-  mutate(is.shaded = as.numeric(population=="shaded")-mean(as.numeric(population=="is.shaded"))) %>% 
-  mutate(mvt = (1/(FPT3-FPT1)),
-         food = scale(Food_intake)[,1],
-         scale_size = scale(shell_diameter)[,1]) %>% 
-  mutate(mvt = replace(mvt,which(FPT1>=1200),0)) %>% 
-  mutate(mvt=scale(mvt)[,1])  ##first approx, include inactive in estimates of scaling
+data <- left_join(raw_behaviour,data_parasite) %>% 
+  filter(dead==0) %>% 
+  #remove the dead individual from the dataset 
+  #!!THIS IS THE ONE WITH THE MOST NEMATODES BY FAR (102), this is natural history info to not forget
+  #we then standardize covariates and responses
+  mutate(is.shaded = as.numeric(population=="shaded")-mean(as.numeric(population=="is.shaded")),
+         scale_food = scale(Food_intake)[,1],
+         scale_size = scale(shell_diameter)[,1])
+```
+
+# Testing model specs
+
+## the movement model
+
+FPT1 is the time to initiate activity, so our movement time is FPT3 - FPT1, and any snail that has FPT1==1200 did not move, so no valid movement value
+
+
+```{r data-prep-mvt}
+#we then define our movement variable
+data_test <- data %>% 
+  mutate(has.moved = FPT1 < 1200) %>% 
+  mutate(mvt = FPT3-FPT1)
+  #mutate(mvt = (1/(FPT3-FPT1))) %>% 
+  #mutate(mvt = replace(mvt,which(has.moved == FALSE),0)) %>% 
+  #mutate(mvt = scale(mvt)[,1])  ##first approx, include inactive in estimates of scaling
 ## individuals with fpt1>=1200 are NOT active, so should not count towards mvt model
 ## is time to activity itself actually a relevant variable? NO (not stdised in the petri to, table phase, just let them habituate until they move)
+```
 
+let's try to fit a simple model with this movement variable. movement data is time, so a lognormal model should be right-ish, no?:
+
+```{r}
+mod_mvt_test <- brm(
+  bf(mvt|subset(has.moved==TRUE) + ## we exclude non-moving snails 
+         cens(mvt>=1200) ~ is.shaded * (band_number + fusion) + 
+    scale_size + (1|series)+(1|fullID)), family=lognormal,
+    data=data_test, chains=4,iter=2000,warmup=1000,
+    prior=c(set_prior("normal(0,1)",class="Intercept"), # priors are probably bad but this is just for testing
+                set_prior("normal(0,1)",class="b"),
+                set_prior("normal(0,1)", class="sd"),
+                set_prior("normal(0,1)",class="sigma")),
+        backend="cmdstanr",seed=42,control=list(adapt_delta=0.99,max_treedepth=15))
+```
+
+```{r}
+newdata <- subset(data_test, has.moved ==TRUE)
+ppc_ribbon(
+  yrep = (predict(mod_mvt_test, newdata=newdata, summary = FALSE)),
+  x = rank(predict(mod_mvt_test, newdata=newdata)[, 1]),
+  y = newdata$mvt,
+  prob = 0.5, prob_outer = 0.95
+)
+```
+
+fairly easy to see that this model is rubbish and doesn't even come close to capturing the very slow individuals, even with individual-level random effects. Changing distributions (not shown) does not solve the problem. Let's try something else, by inverting the movement variable, so that it becomes something closer to a speed:
+
+```{r}
+data_test$mvt2=1/data_test$mvt
+
+mod_mvt_test2 <- brm(
+  bf(mvt2|subset(has.moved==TRUE) + ## we exclude non-moving snails 
+         cens(- 1*(mvt>=1200)) ~ # because the mvt metric is inversed, the censure is too (right- to left-) 
+       is.shaded * (band_number + fusion) + 
+    scale_size + (1|series)+(1|fullID)),
+    data=data_test, chains=4,iter=2000,warmup=1000,
+    prior=c(set_prior("normal(0,1)",class="Intercept"),
+                set_prior("normal(0,1)",class="b"),
+                set_prior("normal(0,1)", class="sd"),
+                set_prior("normal(0,1)",class="sigma")),
+        backend="cmdstanr",seed=42,control=list(adapt_delta=0.99,max_treedepth=15))
+```
+
+```{r}
+newdata <- subset(data_test, has.moved ==TRUE)
+ppc_ribbon(
+  yrep = (predict(mod_mvt_test2, newdata=newdata, summary = FALSE)),
+  x = rank(predict(mod_mvt_test2, newdata=newdata)[, 1]),
+  y = newdata$mvt2,
+  prob = 0.5, prob_outer = 0.95
+)
+```
+
+seems to behave much much better. We'll thus analyse movement as 1/time in the final model.
+
+
+
+# model 
+
+```{r}
 bf_trema<-bf(Trematode_kidney|subset(session==1) ~ is.shaded * ( band_number + fusion) + scale_size + (1|series)+(1|q|fullID),family=poisson)
 bf_nemaL<-bf(Nematode_live_all|subset(session==1 & population=="sun_exposed") ~ band_number + fusion + scale_size + (1|series)+(1|q|fullID),family=poisson)
 bf_food<-bf(food ~  is.shaded * (band_number + fusion) + scale_size + (1|series)+(1|q|fullID))
