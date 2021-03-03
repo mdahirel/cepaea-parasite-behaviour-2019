@@ -152,6 +152,19 @@ mod<-brm(mvbf(bf_food+bf_trema+bf_nema_live+bf_mvt),
 
 
 ```{r}
+summary_mod <- mod %>%
+  posterior_samples() %>%
+  select(starts_with(c("Intercept", "b_", "sd_", "cor_fullID", "sigma"))) %>%
+  pivot_longer(everything()) %>%
+  group_by(name) %>%
+  mean_hdi() %>% 
+  print(n=Inf)
+
+#mcmc_rank_overlay(mod, pars = summary_mod$name)
+```
+
+
+```{r}
 ### for enkysted nematodes: cannot analyse total N because probably accrue with age, which we do not know here
 ### to compare proportion of in black versus in white would probs need to know actual surface of each (+ bias towards trapping close to opening, where more black), 
 
@@ -362,9 +375,7 @@ rbind(varcomps_food,varcomps_mvt) %>%
   
 ```
 
-```{r}
-VarCorr(mod)$fullID$cov
-```
+
 
 
  + individual level correlation grid to do
