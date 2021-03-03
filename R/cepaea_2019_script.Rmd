@@ -339,6 +339,16 @@ mutate(trait="food",
 rbind(varcomps_food,varcomps_mvt) %>% 
   group_by(trait) %>% 
   pivot_longer(cols=c(VF, VI, Vseries, VR),names_to = "varcomp" , values_to = "variance") %>% 
+  ungroup() %>% 
+  mutate(varcomp=fct_recode(varcomp,
+                            `fixed effects` = "VF",
+                            individual = "VI",
+                            `test group` = "Vseries",
+                            residuals = "VR")) %>% 
+  mutate(varcomp=fct_relevel(varcomp,rev)) %>% 
+  mutate(varcomp=fct_relevel(varcomp,"test group", after=1)) %>% 
+  mutate(trait=fct_recode(trait, `Food intake` = "food",
+                          `Movement speed` = "mvt")) %>% 
   ggplot()+
   stat_halfeye(aes(y=varcomp,x=100*variance/VP),
                 point_interval = mean_hdi,.width = c(0.001,0.95),
