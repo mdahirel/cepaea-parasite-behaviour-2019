@@ -233,7 +233,7 @@ p_encaps <- ggplot() +
              filter(dead==0 & session==1) %>% 
              summarise(percent_encaps=mean(Nematode_encaps_all>0)*100) %>% ungroup(),
            aes(band_number,percent_encaps),fill="white",col="grey")+
-  stat_eye(data=preds_encaps, aes(band_number,.value*100, fill = band_number),.width=c(0.01,0.95),slab_alpha=0.7)+
+  stat_eye(data=preds_encaps, aes(band_number,.value*100, fill = band_number),.width=c(0.01,0.95),slab_alpha=0.7, point_interval=mean_hdi)+
   scale_y_continuous("% with encapsulated nematodes")+
   scale_x_discrete("",labels=c("0 bands","3 bands","5 bands"))+
   scale_fill_manual(values=c("#fe9929","#d95f0e","#993404")) +
@@ -249,7 +249,7 @@ preds_nematode <- data %>%
 
 p_nema <- ggplot(subset(data,dead==0 & session==1)) +
   geom_jitter(aes(band_number,Nematode_live_all),height=0, col="grey")+
-  stat_eye(data=preds_nematode, aes(band_number,.value, fill = band_number),.width=c(0.01,0.95),slab_alpha=0.7)+
+  stat_eye(data=preds_nematode, aes(band_number,.value, fill = band_number),.width=c(0.01,0.95),slab_alpha=0.7, point_interval=mean_hdi)+
   scale_y_continuous("Nematodes")+
   scale_x_discrete("",labels=c("0 bands","3 bands","5 bands"))+
   scale_fill_manual(values=c("#fe9929","#d95f0e","#993404")) +
@@ -264,7 +264,7 @@ preds_trematode <- data %>%
 
 p_trema <- ggplot(subset(data,dead==0 & session==1)) +
   geom_jitter(aes(band_number,Trematode_kidney),height=0,col="grey")+
-  stat_eye(data=preds_trematode, aes(band_number,.value, fill=band_number),.width=c(0.01,0.95),slab_alpha=0.7)+
+  stat_eye(data=preds_trematode, aes(band_number,.value, fill=band_number),.width=c(0.01,0.95),slab_alpha=0.7, point_interval=mean_hdi)+
   scale_y_continuous("Trematodes in kidney") +
   scale_x_discrete("Shell phenotype (band number)",labels=c("0 bands","3 bands","5 bands"))+
   scale_fill_manual(values=c("#fe9929","#d95f0e","#993404")) +
@@ -293,7 +293,7 @@ p_mvt <- ggplot(subset(data,has.moved==TRUE)) +
     geom_line(aes(as.numeric(factor(band_number))+0.5*session-0.75,mvt,group=fullID),col="grey")+
     geom_point(aes(band_number,mvt,pch=FPT3==20,group=session),position=position_dodge(width=1),col="grey",fill="white")+
     stat_eye(data=preds_mvt,aes(band_number,.value,fill=band_number),
-           .width=c(0.01,0.95),slab_alpha=0.7)+
+           .width=c(0.01,0.95),slab_alpha=0.7, point_interval=mean_hdi)+
   scale_shape_manual(values=c(16,21))+
   scale_fill_manual(values=c("#fe9929","#d95f0e","#993404")) +
   scale_y_continuous("Movement speed (unit/min)")+
@@ -313,7 +313,7 @@ p_food <- ggplot(data) +
     geom_point(aes(band_number,Food_intake,group=session),position=position_dodge(width=1),col="grey")+
     geom_line(aes(as.numeric(factor(band_number))+0.5*session-0.75,Food_intake,group=fullID),col="grey")+
     stat_eye(data=preds_food,aes(band_number,.value,fill=band_number),
-           .width=c(0.01,0.95),slab_alpha=0.7)+
+           .width=c(0.01,0.95),slab_alpha=0.7, point_interval=mean_hdi)+
   scale_fill_manual(values=c("#fe9929","#d95f0e","#993404")) +
   scale_y_continuous("Food intake (g/night)")+
   scale_x_discrete("Shell phenotype (band number)",labels=c("0 bands","3 bands","5 bands"))+
