@@ -188,7 +188,6 @@ mod_size <-brm(bf(scale_size|subset(session==1) ~ is.shaded * ( band_number + fu
            set_prior("normal(0,1)",class="b"),
            set_prior("normal(0,1)",class="sigma")),
          backend="cmdstanr",seed=42,control=list(max_treedepth=20))
-
 #5band smaller in shaded but not sunshaded
 #if correct result, possible interpretations
 # actually smaller adult, early maturity (but why 5 only)
@@ -196,6 +195,33 @@ mod_size <-brm(bf(scale_size|subset(session==1) ~ is.shaded * ( band_number + fu
 # revisit old data from eric to confirm??
 
 ## pattern same in old cornu data (arcaisCornupheno in phd folder) intermediate vs ferme, ouvert is vineyard (no cepaea there), so something cross specific and cross temp
+
+
+
+mod_size2 <-brm(bf((shell_mass)|subset(session==1) ~ (exp(a)*(shell_diameter/10)^exp(b)),
+                   a~is.shaded,
+                   b~is.shaded,
+                   family=Gamma(link = "identity"),nl=TRUE),
+         data=data, chains=4, iter=2000, warmup=1000,
+         prior=c(
+           set_prior("normal(0,1)",class="b",nlpar=c("a","b"))), # would need a prior on shape
+         backend="cmdstanr",seed=42,control=list(max_treedepth=20))
+## no clear evidence of difference in shell mass in interactive model coeff
+## but at average size evidence that shell are thinner
+
+data %>%
+  select(is.shaded,population) %>% 
+  distinct() %>% 
+  expand_grid(shell_diameter=c(180:280)/10) %>% 
+  mutate(session=1) %>% 
+  add_fitted_draws(mod_size2) %>%
+  ungroup() %>% 
+  ggplot()+
+  geom_point(data=data,aes(shell_diameter,shell_mass,col=population))+
+  stat_lineribbon(aes(shell_diameter,.value,fill=population),alpha=0.5,.width=c(0.01,0.95))
+
+##parameters are not different between the two pops, but consistently give heavier shell for sun exposed
+
 ```
 
 ```{r}
