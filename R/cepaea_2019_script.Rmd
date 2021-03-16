@@ -65,7 +65,9 @@ data_parasite<-raw_parasite %>%
            rowSums()) %>% 
   mutate(Nematode_encaps_all = Nematode_white_encaps + Nematode_dark_encaps)
 
+ggplot(data_parasite)+geom_boxplot(aes(band_number,shell_diameter))+geom_point(data=subset(data_parasite,dead==1),aes(band_number,shell_diameter),col="red",size=2)+facet_wrap(~population)
 
+## the dead individual is on the smaller side of the distribution, but not an outlier
 
 data <- left_join(raw_behaviour,data_parasite) %>% 
   filter(dead==0) %>% 
