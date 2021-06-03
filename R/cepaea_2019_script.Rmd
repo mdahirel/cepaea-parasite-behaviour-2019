@@ -28,8 +28,7 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE, message = FALSE)
 ## 1A - packages
 
 ```{r packages-loading}
-#library(rstan) ## Stan backend
-library(cmdstanr) ## Stan backend (another)
+library(cmdstanr) ## Stan backend
 library(brms) ## the interface we are using
 
 library(tidyverse)
@@ -41,21 +40,23 @@ library(patchwork) #plotting
 library(here)
 
 ## some useful default settings
-#rstan_options(auto_write = TRUE) #for rstan
-options(mc.cores = 4) ## reduce/increase depending on cores available
+options(mc.cores = 4) ## reduce/increase depending on cores available on your machine
 ```
 
+## 1B – data loading
 
-## 1B – data loading and wrangling
-
+we load
 ```{r data-load}
 raw_behaviour <- read_csv(here("data","cepaea_2019_behaviour.csv"))
 raw_parasite <- read_csv(here("data","cepaea_2019_parasite.csv"))
 ```
 
+ <!--to do: description of the original datasets-->
 
-```{r data-prep}
-#### don't forget removing the dead one when relevant
+## 1C – data cleaning and wrangling
+
+Nematodes were divided by size class (live ones) and whether they were found on dark or light parts of the shells (encapsulated): for analysis we create variables summing up these:
+```{r data-prep1}
 data_parasite<-raw_parasite %>% 
   mutate(Nematode_live_all = raw_parasite %>% 
            select(c(Nematode_0_1_free, Nematode_1_3_free, 
@@ -65,44 +66,52 @@ data_parasite<-raw_parasite %>%
            rowSums()) %>% 
   mutate(Nematode_encaps_all = Nematode_white_encaps + Nematode_dark_encaps)
 
-ggplot(data_parasite)+geom_boxplot(aes(band_number,shell_diameter))+geom_point(data=subset(data_parasite,dead==1),aes(band_number,shell_diameter),col="red",size=2)+facet_wrap(~population)
 
+```
+
+we then merge this with the behviour dataset, and remove the dead individual here
+```{r data-prep2}
+#### don't forget removing the dead one when relevant
 ## the dead individual is on the smaller side of the distribution, but not an outlier
 
 data <- left_join(raw_behaviour,data_parasite) %>% 
-  filter(dead==0) %>% 
-  #remove the dead individual from the dataset 
+  filter(dead==0)
+  #remove the dead individual from the dataset for the behaviour and infection analyses
   #!!THIS IS THE ONE WITH THE MOST NEMATODES BY FAR (102), this is natural history info to not forget
-  #we then standardize covariates
-  mutate(is.shaded = as.numeric(population=="shaded")-mean(as.numeric(population=="is.shaded")),
-         scale_size = scale(shell_diameter)[,1]) %>% 
-  mutate(mean_size=mean(shell_diameter,na.rm=TRUE),
+```
+
+we then clean up and standardise variables
+
+first everything but movement
+```{r data-prep3}
+data<- data  %>% 
+  #we then standardize variables except movement
+  mutate(is_pop_shaded = as.numeric(population=="shaded")-mean(as.numeric(population=="shaded")),
+         scale_size = scale(shell_diameter)[,1],
+         scale_food = scale(Food_intake)[,1]) %>%
+  mutate(mean_size=mean(shell_diameter,na.rm=TRUE), ## needed for back-transformations for plots
          sd_size=sd(shell_diameter,na.rm=TRUE)) %>% 
   mutate(mean_food=mean(Food_intake,na.rm=TRUE),
-         sd_food=sd(Food_intake,na.rm=TRUE)) %>% 
-  mutate(scale_food = scale(Food_intake)[,1]) %>% 
-  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
-  mutate(population2 = fct_recode(population,
-                                  `shaded habitat` = "shaded",
-                                  `open habitat` = "sun_exposed")) %>% 
-  mutate(population3 = fct_recode(population,
-                                  `shaded habitat (nematode-free)` = "shaded",
-                                  `open habitat (nematodes)` = "sun_exposed"))
+         sd_food=sd(Food_intake,na.rm=TRUE))
 ```
+
+then movement, which is a little bit more complex:
 
 
 ```{r data-prep-mvt}
 #we then define our movement variable
 data <- data %>% 
-  mutate(FPT1 = FPT1/60, ## let's just convert them to minutes
-         FPT2 = FPT2/60,
-         FPT3 = FPT3/60) %>% 
-  mutate(has.moved = FPT1 < 20) %>% 
-  mutate(mvt = (1/(FPT3-FPT1))) %>% 
-  mutate(mvt = replace(mvt,which(has.moved == FALSE),0)) %>% 
-  # put a zero for the ones that don't move
-  mutate(mean_mvt = mean(subset(mvt,has.moved ==TRUE)), ##mean and sd for scaling
-         sd_mvt = sd(subset(mvt,has.moved ==TRUE))) %>% ## exclude not moving individuals
+  mutate(FPT_2cm = FPT1/60, ## let's just convert them to minutes
+         FPT_5cm = FPT2/60,
+         FPT_10cm = FPT3/60) %>% 
+  mutate(has_moved = FPT_2cm < 20) %>%
+  mutate(latency=FPT_10cm-FPT_2cm) %>% 
+  mutate(mvt = 1/latency) %>%
+  mutate(latency=replace(mvt,which(has_moved == FALSE), NA),
+         mvt = replace(mvt,which(has_moved == FALSE),0)) %>% 
+  # put a zero mvt/ NA latency for the ones that don't move, they will be excluded in model anyway
+  mutate(mean_mvt = mean(subset(mvt,has_moved ==TRUE)), ##mean and sd for scaling
+         sd_mvt = sd(subset(mvt,has_moved ==TRUE))) %>% ## exclude not moving individuals
   mutate(scale_mvt = (mvt - mean_mvt)/sd_mvt)
 ## individuals with fpt1>=20 minutes are NOT active, so should not count towards mvt model
 ## is time to activity itself actually a relevant variable? NO (not stdised in the petri to, table phase, just let them habituate until they move)
@@ -110,7 +119,32 @@ data <- data %>%
 
 See the model tests script for why we choose these transformations for movement and food intake data
 
-# model 
+# Part 2: models 
+
+## 2A - the model for size
+
+```{r}
+# ideally would include size as a correlated response in the multivar, not a covariate, but splitting indvar bw sigma and SD is WAY TOO HARD
+mod_size <-brm(bf(scale_size ~ is_pop_shaded * ( band_number + fusion )),
+         data=subset(data,session==1),
+                    # size variable is present twice in dataset (to go with behaviour)
+                    # subset argument ensures it is counted only once and we don't artificially double the dataset
+         chains=4, iter=2000, warmup=1000,
+         prior=c(
+           set_prior("normal(0,1)",class="Intercept"),
+           set_prior("normal(0,1)",class="b"),
+           set_prior("normal(0,1)",class="sigma")),
+         backend="cmdstanr",seed=42,control=list(max_treedepth=20))
+#5band smaller in shaded but not sunshaded
+#if correct result, possible interpretations
+# actually smaller adult, early maturity (but why 5 only)
+# small adult 5 survive more in shaded
+# revisit old data from eric to confirm??
+
+## pattern same in old cornu data (arcaisCornupheno in phd folder) intermediate vs ferme, ouvert is vineyard (no cepaea there), so something cross specific and cross temp
+```
+
+## 2B - the multivariate parasite-behaviour model
 
 ```{r}
 bf_trema<-bf(
@@ -166,65 +200,23 @@ summary_mod <- mod %>%
 ```
 
 
-```{r}
-### for enkysted nematodes: cannot analyse total N because probably accrue with age, which we do not know here
-### to compare proportion of in black versus in white would probs need to know actual surface of each (+ bias towards trapping close to opening, where more black), 
 
-### so what we can do: use presence absence data as just natural history and evidence that nematodes are present in marais, just not when we sampled (seasonality?)
 
-mod_history<-brm(Nematode_encaps_all>0 | subset(session == 1)~ is.shaded * ( band_number + fusion ) + scale_size,family=bernoulli,
-         data=data, chains=4, iter=2000, warmup=1000,
-         prior=c(set_prior("normal(0,1.5)",class="Intercept"),
-                 set_prior("normal(0,1)",class="b")),
-         backend="cmdstanr",seed=42)
-## add random effect of series??? (or remove it from nema/trema??)
-```
 
+# figures
 
 ```{r}
-# ideally would include size as a correlated response in the multivar, not a covariate, but splitting indvar bw sigma and SD is WAY TOO HARD
-mod_size <-brm(bf(scale_size|subset(session==1) ~ is.shaded * ( band_number + fusion )),
-         data=data, chains=4, iter=2000, warmup=1000,
-         prior=c(
-           set_prior("normal(0,1)",class="Intercept"),
-           set_prior("normal(0,1)",class="b"),
-           set_prior("normal(0,1)",class="sigma")),
-         backend="cmdstanr",seed=42,control=list(max_treedepth=20))
-#5band smaller in shaded but not sunshaded
-#if correct result, possible interpretations
-# actually smaller adult, early maturity (but why 5 only)
-# small adult 5 survive more in shaded
-# revisit old data from eric to confirm??
 
-## pattern same in old cornu data (arcaisCornupheno in phd folder) intermediate vs ferme, ouvert is vineyard (no cepaea there), so something cross specific and cross temp
-
-
-
-mod_size2 <-brm(bf((shell_mass)|subset(session==1) ~ (exp(a)*(shell_diameter/10)^exp(b)),
-                   a~is.shaded,
-                   b~is.shaded,
-                   family=Gamma(link = "identity"),nl=TRUE),
-         data=data, chains=4, iter=2000, warmup=1000,
-         prior=c(
-           set_prior("normal(0,1)",class="b",nlpar=c("a","b"))), # would need a prior on shape
-         backend="cmdstanr",seed=42,control=list(max_treedepth=20))
-## no clear evidence of difference in shell mass in interactive model coeff
-## but at average size evidence that shell are thinner
-
-data %>%
-  select(is.shaded,population) %>% 
-  distinct() %>% 
-  expand_grid(shell_diameter=c(180:280)/10) %>% 
-  mutate(session=1) %>% 
-  add_fitted_draws(mod_size2) %>%
-  ungroup() %>% 
-  ggplot()+
-  geom_point(data=data,aes(shell_diameter,shell_mass,col=population))+
-  stat_lineribbon(aes(shell_diameter,.value,fill=population),alpha=0.5,.width=c(0.01,0.95))
-
-##parameters are not different between the two pops, but consistently give heavier shell for sun exposed
-
+  # we
+  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
+  mutate(population2 = fct_recode(population,
+                                  `shaded habitat` = "shaded",
+                                  `open habitat` = "sun_exposed")) %>% 
+  mutate(population3 = fct_recode(population,
+                                  `shaded habitat (nematode-free)` = "shaded",
+                                  `open habitat (nematodes)` = "sun_exposed")) %>% 
 ```
+
 
 ```{r}
 preds_size <- data %>% 
@@ -248,24 +240,14 @@ ggplot(subset(data,dead==0 & session==1)) +
 
 
 ```{r}
-preds_encaps <- data %>% 
-  select(band_number,is.shaded,population, population2) %>% 
-  distinct() %>% 
-  mutate(scale_size=0, session=1,fusion="no") %>% 
-  add_fitted_draws(mod_history,re_formula=NA) %>%
-  ungroup()
-
-p_encaps <- ggplot() +
-  geom_col(data=data %>% 
-             group_by(population2,band_number) %>% 
-             filter(dead==0 & session==1) %>% 
-             summarise(percent_encaps=mean(Nematode_encaps_all>0)*100) %>% ungroup(),
-           aes(band_number,percent_encaps),fill="white",col="grey")+
-  stat_eye(data=preds_encaps, aes(band_number,.value*100, fill = band_number),.width=c(0.01,0.95),slab_alpha=0.7, point_interval=mean_hdi)+
+p_encaps <- ggplot(data=data_parasite  %>% 
+             filter(dead==0) %>% 
+              group_by(population,band_number) %>% 
+             summarise(percent_encaps=mean(Nematode_encaps_all>0)*100) %>% ungroup()) +
+  geom_col(aes(band_number,percent_encaps),fill="white",col="grey")+
   scale_y_continuous("% with encapsulated nematodes")+
   scale_x_discrete("",labels=c("0 bands","3 bands","5 bands"))+
-  scale_fill_manual(values=c("#fe9929","#d95f0e","#993404")) +
-  facet_wrap(~population2)+
+  facet_wrap(~population)+
   coord_cartesian(ylim=c(0,100))
 
 preds_nematode <- data %>% 
@@ -407,4 +389,15 @@ rbind(varcomps_food,varcomps_mvt) %>%
 
 
  + individual level correlation grid to do
+
+# Supplementary plots
+
+```{r}
+# a plot to look at the size of the dead snail relative to the others
+ggplot(data_parasite)+
+  geom_boxplot(aes(band_number,shell_diameter))+
+  geom_point(data=subset(data_parasite,dead==1),
+             aes(band_number,shell_diameter),col="red",size=2)+
+  facet_wrap(~population)
+```
 
