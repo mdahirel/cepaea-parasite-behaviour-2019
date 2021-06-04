@@ -376,6 +376,8 @@ table2
 
 # figures and predictions
 
+## on shell size
+
 ```{r preds-size}
 preds_size <- data %>% 
   select(band_number,population,mean_size,sd_size) %>% 
@@ -422,11 +424,12 @@ ggplot(subset(data,dead==0 & session==1) %>%
   theme(legend.position="none")
 ```
 
+## oon parasite stuff
+
 
 ```{r}
 p_encaps <- ggplot(data=data_parasite  %>% 
              filter(dead==0) %>% 
-  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
   mutate(population = fct_recode(population,
                                   `shaded habitat` = "shaded",
                                   `open habitat` = "sun_exposed")) %>% 
@@ -447,7 +450,6 @@ preds_nematode <- data %>%
   mutate(population = fct_recode(population, `open habitat` = "sun_exposed")) 
 
 p_nema <- ggplot(subset(data,dead==0 & session==1) %>% 
-  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
   mutate(population = fct_recode(population,
                                   `shaded habitat` = "shaded",
                                   `open habitat` = "sun_exposed")) ) +
@@ -459,18 +461,16 @@ p_nema <- ggplot(subset(data,dead==0 & session==1) %>%
   facet_wrap(~population)
 
 preds_trematode <- data %>% 
-  select(band_number,is_pop_shaded,population) %>% 
+  select(band_number,population) %>% 
   distinct() %>% 
   mutate(scale_size=0, session=1) %>% 
   add_fitted_draws(mod,re_formula=NA,resp="Trematodekidney") %>%  ## but re_formula NA not right for poisson ORLE, right? at least not for mean
-  ungroup() %>% 
-  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
+  ungroup() %>%  
   mutate(population = fct_recode(population,
                                   `shaded habitat` = "shaded",
                                   `open habitat` = "sun_exposed")) 
 
 p_trema <- ggplot(subset(data,dead==0 & session==1)%>% 
-  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
   mutate(population = fct_recode(population,
                                   `shaded habitat` = "shaded",
                                   `open habitat` = "sun_exposed")) ) +
@@ -484,7 +484,8 @@ p_trema <- ggplot(subset(data,dead==0 & session==1)%>%
 p_encaps/p_nema/p_trema & 
   cowplot::theme_half_open(11) &
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") & 
-  theme(legend.position="none")
+  theme(legend.position="none") & 
+  plot_annotation(tag_levels="A")
 
 ```
 
@@ -493,19 +494,17 @@ absence of effect of trematodes may be due to rarity in overall population (what
 
 ```{r}
 preds_mvt <- data %>% 
-  select(population,band_number, is_pop_shaded,mean_mvt,sd_mvt) %>% 
+  select(population,band_number,mean_mvt,sd_mvt) %>% 
   distinct() %>% 
   mutate(scale_size=0, session=1,has_moved=TRUE) %>% 
   add_fitted_draws(mod,re_formula=NA,resp="scalemvt") %>% 
-  ungroup() %>% 
-  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
+  ungroup() %>%
   mutate(population = fct_recode(population,
                                   `shaded habitat (no nematodes)` = "shaded",
                                   `open habitat (nematodes)` = "sun_exposed")) 
 
 
 p_mvt <- ggplot(subset(data,has_moved==TRUE)%>% 
-  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
   mutate(population = fct_recode(population,
                                   `shaded habitat (no nematodes)` = "shaded",
                                   `open habitat (nematodes)` = "sun_exposed")) ) +
@@ -522,19 +521,17 @@ p_mvt <- ggplot(subset(data,has_moved==TRUE)%>%
 
 
 preds_food <- data %>% 
-  select(population,band_number, is_pop_shaded,mean_food,sd_food) %>% 
+  select(population,band_number,mean_food,sd_food) %>% 
   distinct() %>% 
   mutate(scale_size=0, session=1,fusion="no") %>% 
   add_fitted_draws(mod,re_formula=NA,resp="scalefood") %>% 
   mutate(.value=.value*sd_food + mean_food)%>% 
   ungroup() %>% 
-  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
   mutate(population = fct_recode(population,
                                   `shaded habitat (no nematodes)` = "shaded",
                                   `open habitat (nematodes)` = "sun_exposed")) 
 
 p_food <- ggplot(data %>% 
-  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
   mutate(population = fct_recode(population,
                                   `shaded habitat (no nematodes)` = "shaded",
                                   `open habitat (nematodes)` = "sun_exposed")) ) +
@@ -550,7 +547,8 @@ p_food <- ggplot(data %>%
 p_mvt/p_food & 
   cowplot::theme_half_open(11) &
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") & 
-  theme(legend.position="none")
+  theme(legend.position="none") & 
+  plot_annotation(tag_levels="A")
 ```
 
 
