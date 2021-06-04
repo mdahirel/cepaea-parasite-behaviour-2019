@@ -57,14 +57,16 @@ raw_parasite <- read_csv(here("data","cepaea_2019_parasite.csv"))
 
 Nematodes were divided by size class (live ones) and whether they were found on dark or light parts of the shells (encapsulated): for analysis we create variables summing up these:
 ```{r data-prep1}
-data_parasite<-raw_parasite %>% 
+data_parasite<-raw_parasite %>%
+  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
   mutate(Nematode_live_all = raw_parasite %>% 
            select(c(Nematode_0_1_free, Nematode_1_3_free, 
                     Nematode_3_5_free, Nematode_5_plus_free, 
                     Nematode_1_3_lung, Nematode_3_5_lung, 
                     Nematode_5_plus_lung)) %>% 
            rowSums()) %>% 
-  mutate(Nematode_encaps_all = Nematode_white_encaps + Nematode_dark_encaps)
+  mutate(Nematode_encaps_all = Nematode_white_encaps + Nematode_dark_encaps,
+         Acari_live_all = Acari_kidney + Acari_digestive)
 
 
 ```
@@ -74,7 +76,9 @@ we then merge this with the behviour dataset, and remove the dead individual her
 #### don't forget removing the dead one when relevant
 ## the dead individual is on the smaller side of the distribution, but not an outlier
 
-data <- left_join(raw_behaviour,data_parasite) %>% 
+data <- raw_behaviour %>% 
+  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
+  left_join(data_parasite) %>% 
   filter(dead==0)
   #remove the dead individual from the dataset for the behaviour and infection analyses
   #!!THIS IS THE ONE WITH THE MOST NEMATODES BY FAR (102), this is natural history info to not forget
@@ -85,10 +89,8 @@ we then clean up and standardise variables
 first everything but movement
 ```{r data-prep3}
 data<- data  %>% 
-  #we then standardize variables except movement
-  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
-  mutate(is_pop_shaded = as.numeric(population=="shaded")-mean(as.numeric(population=="shaded")),
-         scale_size = scale(shell_diameter)[,1],
+  #we then standardize size and response variables
+  mutate(scale_size = scale(shell_diameter)[,1],
          scale_food = scale(Food_intake)[,1]) %>%
   mutate(mean_size=mean(shell_diameter,na.rm=TRUE), ## needed for back-transformations for plots
          sd_size=sd(shell_diameter,na.rm=TRUE)) %>% 
@@ -118,14 +120,29 @@ data <- data %>%
 ## is time to activity itself actually a relevant variable? NO (not stdised in the petri to, table phase, just let them habituate until they move)
 ```
 
-# Part 2: models 
+# Part 2: analyses
+
+## natural history of parasites
+
+```{r}
+#number of nematodes in the dead individual
+subset(data_parasite$Nematode_live_all,data_parasite$dead==1)
+#
+subset(data_parasite$Trematode_kidney,data_parasite$dead==1)
+
+
+subset(data_parasite$Acari_live_all,data_parasite$Acari_live_all > 0)
+
+subset(data_parasite$Acari_encaps,data_parasite$Acari_encaps > 0)
+
+```
+
 
 ## 2A - the model for size
 
 ```{r}
 # ideally would include size as a correlated response in the multivar, not a covariate, but splitting indvar bw sigma and SD is WAY TOO HARD
-mod_size <-brm(bf(scale_size ~          0 + band_number + is_pop_shaded +
-       band_number : is_pop_shaded) ,
+mod_size <-brm(bf(scale_size ~ 0 + band_number + band_number : population),
          data=subset(data,session==1),
                     # size variable is present twice in dataset (to go with behaviour)
                     # subset argument ensures it is counted only once and we don't artificially double the dataset
@@ -134,29 +151,16 @@ mod_size <-brm(bf(scale_size ~          0 + band_number + is_pop_shaded +
            set_prior("normal(0,1)",class="b"),
            set_prior("normal(0,1)",class="sigma")),
          backend="cmdstanr",seed=42,control=list(max_treedepth=20))
-#5band smaller in shaded but not sunshaded
-#if correct result, possible interpretations
-# actually smaller adult, early maturity (but why 5 only)
-# small adult 5 survive more in shaded
-# revisit old data from eric to confirm??
-
-## pattern same in old cornu data (arcaisCornupheno in phd folder) intermediate vs ferme, ouvert is vineyard (no cepaea there), so something cross specific and cross temp
 ```
 
 
 ```{r}
-summary(mod_size)
 pp_check(mod_size)
-
 pp_check(mod_size, "stat_2d")
-
 plot(mod_size)
-
 mcmc_rank_hist(mod_size)
 mcmc_rank_overlay(mod_size)
 ```
-
-seems OK
 
 ## 2B - the multivariate parasite-behaviour model
 
@@ -172,8 +176,7 @@ data_test <- data %>%
 mod_food_test_beta <- brm(
     bf(food_test/1.5|cens(- 1*(food_test<=0.0001)) ~  # we use left-censoring to allow zero values in a Beta model
          # in effect we assume that zeroes are actually non-zeroes but below the scale detection limit
-                  0 + band_number  + is_pop_shaded +
-       band_number : is_pop_shaded  +  
+                  0 + band_number  +  band_number : population  +  
          scale_size + (1|series)+(1|fullID)), family=Beta,
     data=data_test, chains=4,iter=4000,warmup=2000,
     prior=c(set_prior("normal(0,1)",class="b"),
@@ -194,8 +197,7 @@ Let's just try a Gaussian LMM?
 ```{r}
 mod_food_test_normal <- brm(
     bf(scale_food ~
-                  0 + band_number  + is_pop_shaded +
-       band_number : is_pop_shaded +  
+                  0 + band_number  +  band_number : population  +   
          scale_size + (1|series)+(1|fullID)),
     data=data, chains=4,iter=4000,warmup=2000,
     prior=c(
@@ -215,8 +217,7 @@ now we do similar tests with movement. First let's try a model with lognormal:
 
 mod_mvt_test_lognormal <- brm(
   bf(latency|subset(has_moved==TRUE) + ## we exclude non-moving snails 
-         cens(FPT_10cm>=20) ~  0 + band_number + is_pop_shaded +
-       band_number : is_pop_shaded + 
+         cens(FPT_10cm>=20) ~  0 + band_number  +  band_number : population  +  
     scale_size + (1|series)+(1|fullID)), family=lognormal,
     data=data, chains=4,iter=2000,warmup=1000,
     prior=c( # priors are probably bad but this is just for testing
@@ -246,8 +247,7 @@ let's try a normal on inverse data then
 
 mod_mvt_test_normal <- brm(
   bf(scale_mvt|subset(has_moved==TRUE) ~ ## we exclude non-moving snails 
-         0 + band_number + is_pop_shaded +
-       band_number : is_pop_shaded  + 
+        0 + band_number  +  band_number : population  +  
     scale_size + (1|series)+(1|fullID)),
     data=data, chains=4,iter=2000,warmup=1000,
     prior=c( # priors are probably bad but this is just for testing
@@ -374,28 +374,45 @@ table2
 
 
 
-# figures
+# figures and predictions
 
-```{r fig-size}
+```{r preds-size}
 preds_size <- data %>% 
-  select(band_number,is_pop_shaded,population,mean_size,sd_size) %>% 
+  select(band_number,population,mean_size,sd_size) %>% 
   distinct() %>% 
   mutate(session=1) %>% 
-  add_fitted_draws(mod_size,re_formula=NA) %>%  ## but re_formula NA not right for poisson ORLE, right? at least not for mean
+  add_fitted_draws(mod_size) %>%
   ungroup() %>% 
-  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
   mutate(population = fct_recode(population,
                                   `shaded habitat` = "shaded",
-                                  `open habitat` = "sun_exposed")) 
+                                  `open habitat` = "sun_exposed")) %>% 
+  mutate(.value = (.value*sd_size)+mean_size) # we back-transform
+```
+
+```{r compare-size}
+
+preds_size %>% 
+  mutate(.iteration=.draw) %>% 
+  group_by(population) %>% 
+  compare_levels(variable=.value,by=band_number) %>% 
+  mean_hdi()
 
 
-ggplot(subset(data,dead==0 & session==1)%>% 
-  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
+preds_size %>% 
+  mutate(.iteration=.draw) %>% 
+  group_by(band_number) %>% 
+  compare_levels(variable=.value,by=population) %>% 
+  mean_hdi()
+```
+
+
+```{r fig-size}
+ggplot(subset(data,dead==0 & session==1) %>% 
   mutate(population = fct_recode(population,
                                   `shaded habitat` = "shaded",
                                   `open habitat` = "sun_exposed")) ) +
   geom_jitter(aes(band_number,shell_diameter),height=0,col="grey")+
-  stat_eye(data=preds_size, aes(band_number,(.value*sd_size)+mean_size, fill=band_number),.width=c(0.01,0.95),slab_alpha=0.7)+
+  stat_eye(data=preds_size, aes(band_number,.value, fill=band_number),.width=c(0.01,0.95),slab_alpha=0.7)+
   scale_y_continuous("Shell diameter (mm)") +
   scale_x_discrete("Shell phenotype (band number)",labels=c("0 bands","3 bands","5 bands"))+
   scale_fill_manual(values=c("#fe9929","#d95f0e","#993404")) +
