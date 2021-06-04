@@ -86,6 +86,7 @@ first everything but movement
 ```{r data-prep3}
 data<- data  %>% 
   #we then standardize variables except movement
+  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
   mutate(is_pop_shaded = as.numeric(population=="shaded")-mean(as.numeric(population=="shaded")),
          scale_size = scale(shell_diameter)[,1],
          scale_food = scale(Food_intake)[,1]) %>%
@@ -107,9 +108,9 @@ data <- data %>%
   mutate(has_moved = FPT_2cm < 20) %>%
   mutate(latency=FPT_10cm-FPT_2cm) %>% 
   mutate(mvt = 1/latency) %>%
-  mutate(latency=replace(latency,which(has_moved == FALSE), NA),
+  mutate(latency=replace(latency,which(has_moved == FALSE), 20),
          mvt = replace(mvt,which(has_moved == FALSE),0)) %>% 
-  # put a zero mvt/ NA latency for the ones that don't move, they will be excluded in-model anyway
+  # put a zero mvt/ max latency for the ones that don't move, they will be excluded in-model anyway
   mutate(mean_mvt = mean(subset(mvt,has_moved ==TRUE)), ##mean and sd for scaling
          sd_mvt = sd(subset(mvt,has_moved ==TRUE))) %>% ## exclude not moving individuals
   mutate(scale_mvt = (mvt - mean_mvt)/sd_mvt)
@@ -123,13 +124,13 @@ data <- data %>%
 
 ```{r}
 # ideally would include size as a correlated response in the multivar, not a covariate, but splitting indvar bw sigma and SD is WAY TOO HARD
-mod_size <-brm(bf(scale_size ~ is_pop_shaded * (band_number + fusion)),
+mod_size <-brm(bf(scale_size ~          0 + band_number + is_pop_shaded +
+       band_number : is_pop_shaded) ,
          data=subset(data,session==1),
                     # size variable is present twice in dataset (to go with behaviour)
                     # subset argument ensures it is counted only once and we don't artificially double the dataset
          chains=4, iter=4000, warmup=2000,
          prior=c(
-           set_prior("normal(0,1)",class="Intercept"),
            set_prior("normal(0,1)",class="b"),
            set_prior("normal(0,1)",class="sigma")),
          backend="cmdstanr",seed=42,control=list(max_treedepth=20))
@@ -144,6 +145,7 @@ mod_size <-brm(bf(scale_size ~ is_pop_shaded * (band_number + fusion)),
 
 
 ```{r}
+summary(mod_size)
 pp_check(mod_size)
 
 pp_check(mod_size, "stat_2d")
@@ -151,6 +153,7 @@ pp_check(mod_size, "stat_2d")
 plot(mod_size)
 
 mcmc_rank_hist(mod_size)
+mcmc_rank_overlay(mod_size)
 ```
 
 seems OK
@@ -169,11 +172,11 @@ data_test <- data %>%
 mod_food_test_beta <- brm(
     bf(food_test/1.5|cens(- 1*(food_test<=0.0001)) ~  # we use left-censoring to allow zero values in a Beta model
          # in effect we assume that zeroes are actually non-zeroes but below the scale detection limit
-         is_pop_shaded * (band_number + fusion) + 
+                  0 + band_number  + is_pop_shaded +
+       band_number : is_pop_shaded  +  
          scale_size + (1|series)+(1|fullID)), family=Beta,
     data=data_test, chains=4,iter=4000,warmup=2000,
-    prior=c(set_prior("normal(0,1)",class="Intercept"),
-            set_prior("normal(0,1)",class="b"),
+    prior=c(set_prior("normal(0,1)",class="b"),
             set_prior("normal(0,1)", class="sd")),
     backend="cmdstanr",seed=42,control=list(adapt_delta=0.99,max_treedepth=15))
 ```
@@ -191,10 +194,11 @@ Let's just try a Gaussian LMM?
 ```{r}
 mod_food_test_normal <- brm(
     bf(scale_food ~
-         is_pop_shaded * (band_number + fusion) + 
+                  0 + band_number  + is_pop_shaded +
+       band_number : is_pop_shaded +  
          scale_size + (1|series)+(1|fullID)),
     data=data, chains=4,iter=4000,warmup=2000,
-    prior=c(set_prior("normal(0,1)",class="Intercept"),
+    prior=c(
             set_prior("normal(0,1)",class="b"),
             set_prior("normal(0,1)", class="sd")),
     backend="cmdstanr",seed=42,control=list(adapt_delta=0.99,max_treedepth=15))
@@ -211,10 +215,11 @@ now we do similar tests with movement. First let's try a model with lognormal:
 
 mod_mvt_test_lognormal <- brm(
   bf(latency|subset(has_moved==TRUE) + ## we exclude non-moving snails 
-         cens(FPT_10cm>=20) ~ is_pop_shaded * (band_number + fusion) + 
+         cens(FPT_10cm>=20) ~  0 + band_number + is_pop_shaded +
+       band_number : is_pop_shaded + 
     scale_size + (1|series)+(1|fullID)), family=lognormal,
     data=data, chains=4,iter=2000,warmup=1000,
-    prior=c(set_prior("normal(0,1)",class="Intercept"), # priors are probably bad but this is just for testing
+    prior=c( # priors are probably bad but this is just for testing
                 set_prior("normal(0,1)",class="b"),
                 set_prior("normal(0,1)", class="sd"),
                 set_prior("normal(0,1)",class="sigma")),
@@ -222,29 +227,39 @@ mod_mvt_test_lognormal <- brm(
 ```
 
 ```{r}
-pp_check(mod_mvt_test_lognormal,"stat_2d")
-```
-same as with food, seems off (not shown, but easy to change from lognormal to Gamma, or other survival-data adapted families, and see they have the same problems)
+newdata <- subset(data, has_moved ==TRUE)
+ppc_stat_2d(
+  yrep = (predict(mod_mvt_test_lognormal, newdata=newdata, summary = FALSE)[1:100,]),
+  y = newdata$latency
+)
 
-let's try the Weibull (gamma (not shown): better than lognormal but worse than weibull)
+ppc_dens_overlay(
+  yrep = (predict(mod_mvt_test_lognormal, newdata=newdata, summary = FALSE)[1:100,]), 
+  y = newdata$latency
+)
+```
+same as with food, seems off (not shown, but easy to change from lognormal to Gamma, or other time-to-event data adapted families, and see they have the same problems)
+
+let's try a normal on inverse data then
 
 ```{r}
 
-mod_mvt_test_weibull <- brm(
-  bf(latency|subset(has_moved==TRUE) + ## we exclude non-moving snails 
-         cens(FPT_10cm>=20) ~ is_pop_shaded * (band_number + fusion) + 
-    scale_size + (1|series)+(1|fullID)), family=weibull(link_shape="log"),
+mod_mvt_test_normal <- brm(
+  bf(scale_mvt|subset(has_moved==TRUE) ~ ## we exclude non-moving snails 
+         0 + band_number + is_pop_shaded +
+       band_number : is_pop_shaded  + 
+    scale_size + (1|series)+(1|fullID)),
     data=data, chains=4,iter=2000,warmup=1000,
-    prior=c(set_prior("normal(0,1)",class="Intercept"), # priors are probably bad but this is just for testing
+    prior=c( # priors are probably bad but this is just for testing
                 set_prior("normal(0,1)",class="b"),
                 set_prior("normal(0,1)", class="sd"),
-                set_prior("normal(0,1)",class="shape")),
+                set_prior("normal(0,1)",class="sigma")),
         backend="cmdstanr",seed=42,control=list(adapt_delta=0.99,max_treedepth=15))
 ```
 
 
 ```{r}
-pp_check(mod_mvt_test_weibull)
+pp_check(mod_mvt_test_normal)
 ```
 again, way better
 
@@ -253,22 +268,23 @@ again, way better
 ```{r}
 bf_trema<-bf(
   Trematode_kidney|subset(session==1) ~ 
-    is.shaded * ( band_number + fusion) + scale_size + 
+    0 + band_number + band_number : population  +  scale_size + 
     (1|series)+(1|q|fullID),
   family=poisson)
 
 bf_nema_live<-bf(
   Nematode_live_all|subset(session==1 & population=="sun_exposed") ~ 
-    band_number + fusion + scale_size + 
+    0 + band_number + scale_size + 
     (1|series)+(1|q|fullID),
   family=poisson)
 
-bf_food<-bf(scale_food ~  is.shaded * (band_number + fusion) + scale_size + 
-              (1|series)+(1|q|fullID))
+bf_food<-bf(scale_food ~ 
+              0 + band_number + band_number : population  + scale_size + 
+    (1|series)+(1|q|fullID))
 
 bf_mvt<-bf(
-  scale_mvt|subset(has.moved==TRUE) + cens(-1*(FPT3>=20)) ~  
-    is.shaded * (band_number + fusion) + scale_size + 
+  scale_mvt|subset(has_moved==TRUE)  ~  
+        0 + band_number + band_number : population  + scale_size + 
     (1|series)+(1|q|fullID))
 
 ##group column is actually just lettercode, worth renaming removing?
@@ -277,14 +293,10 @@ bf_mvt<-bf(
 mod<-brm(mvbf(bf_food+bf_trema+bf_nema_live+bf_mvt),
            data=data,
         chains=4,iter=4000,warmup=2000,
-        prior=c(set_prior("normal(0,1)",class="Intercept",resp=c("Trematodekidney","Nematodeliveall")),
-                set_prior("normal(0,1)",class="Intercept",
-                          resp=c("scalefood","scalemvt")),
-                set_prior("normal(0,1)",class="b",
+        prior=c(set_prior("normal(0,1)",class="b",
                           resp=c("Trematodekidney","Nematodeliveall","scalefood","scalemvt")),
                 set_prior("normal(0,1)", class="sd",
                           resp=c("Trematodekidney","Nematodeliveall","scalefood","scalemvt")),
-                #set_prior("constant(0.01)",class="sigma",resp="scalesize"),
                 set_prior("normal(0,1)",class="sigma",resp=c("scalemvt","scalefood")),
                 set_prior("lkj(2)",class="cor")),
         backend="cmdstanr",seed=42,control=list(adapt_delta=0.99,max_treedepth=10))
@@ -297,8 +309,42 @@ summary_mod <- mod %>%
   select(starts_with(c("Intercept", "b_", "sd_", "cor_fullID", "sigma"))) %>%
   pivot_longer(everything()) %>%
   group_by(name) %>%
-  mean_hdi() %>% 
+  mean_hdi() 
+
+summary_mod %>% 
   print(n=Inf)
+
+
+table1<-summary_mod %>% 
+  mutate(value = paste(round(value,2)," [", round(.lower,2),"; ",round(.upper,2),"]",sep="")) %>% 
+  filter(str_detect(name,"cor_fullID")==FALSE) %>% 
+  mutate(trait = case_when(
+    str_detect(name,"Nematode") ~ "Nematode abundance",
+    str_detect(name,"Trematode") ~ "Trematode abundance",
+    str_detect(name,"food") ~ "Food intake",
+    str_detect(name,"scalemvt") ~ "Movement",
+    TRUE ~ "ERROR"
+  )) %>% 
+  mutate(coefficient = case_when(
+    str_detect(name,"sigma") ~ "Residual SD",
+    str_detect(name, "sd_series") ~ "Test group SD",
+    str_detect(name, "sd_fullID") ~ "Individual-level SD",
+    str_detect(name,"size") ~ "Shell size (standardised)",
+    str_detect(name,"5B:populationshaded") ~ "Population = \"shaded\"~[5 bands]~",
+    str_detect(name,"3B:populationshaded") ~ "Population = \"shaded\"~[3 bands]~",
+    str_detect(name,"0B:populationshaded") ~ "Population = \"shaded\"~[0 bands]~",
+    str_detect(name,"5B$") ~ "Intercept~[5 bands]~",
+    str_detect(name,"3B$") ~ "Intercept~[3 bands]~",
+    str_detect(name,"0B$") ~ "Intercept~[0 bands]~",
+  )) %>% 
+  select(coefficient,trait,value)%>% 
+  pivot_wider(names_from="trait",values_from="value") %>% 
+  select(coefficient, `Nematode abundance`, `Trematode abundance`, `Movement`, `Food intake`) %>% 
+  unnest(cols=c())
+
+table1[c(1,2,3,5,6,7,4,9,8,10),] %>%   # just some reordering
+  knitr::kable()
+
 
 #mcmc_rank_overlay(mod, pars = summary_mod$name)
 ```
@@ -309,34 +355,30 @@ summary_mod <- mod %>%
 
 # figures
 
-```{r}
-
-  # we
-  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
-  mutate(population2 = fct_recode(population,
-                                  `shaded habitat` = "shaded",
-                                  `open habitat` = "sun_exposed")) %>% 
-  mutate(population3 = fct_recode(population,
-                                  `shaded habitat (nematode-free)` = "shaded",
-                                  `open habitat (nematodes)` = "sun_exposed")) %>% 
-```
-
-
-```{r}
+```{r fig-size}
 preds_size <- data %>% 
-  select(band_number,is.shaded,population, population2,mean_size,sd_size) %>% 
+  select(band_number,is_pop_shaded,population,mean_size,sd_size) %>% 
   distinct() %>% 
-  mutate(session=1,fusion="no") %>% 
+  mutate(session=1) %>% 
   add_fitted_draws(mod_size,re_formula=NA) %>%  ## but re_formula NA not right for poisson ORLE, right? at least not for mean
-  ungroup()
+  ungroup() %>% 
+  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
+  mutate(population = fct_recode(population,
+                                  `shaded habitat` = "shaded",
+                                  `open habitat` = "sun_exposed")) 
 
-ggplot(subset(data,dead==0 & session==1)) +
+
+ggplot(subset(data,dead==0 & session==1)%>% 
+  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
+  mutate(population = fct_recode(population,
+                                  `shaded habitat` = "shaded",
+                                  `open habitat` = "sun_exposed")) ) +
   geom_jitter(aes(band_number,shell_diameter),height=0,col="grey")+
   stat_eye(data=preds_size, aes(band_number,(.value*sd_size)+mean_size, fill=band_number),.width=c(0.01,0.95),slab_alpha=0.7)+
   scale_y_continuous("Shell diameter (mm)") +
   scale_x_discrete("Shell phenotype (band number)",labels=c("0 bands","3 bands","5 bands"))+
   scale_fill_manual(values=c("#fe9929","#d95f0e","#993404")) +
-  facet_wrap(~population2) +
+  facet_wrap(~population) +
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") + 
   theme(legend.position="none")
@@ -346,6 +388,10 @@ ggplot(subset(data,dead==0 & session==1)) +
 ```{r}
 p_encaps <- ggplot(data=data_parasite  %>% 
              filter(dead==0) %>% 
+  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
+  mutate(population = fct_recode(population,
+                                  `shaded habitat` = "shaded",
+                                  `open habitat` = "sun_exposed")) %>% 
               group_by(population,band_number) %>% 
              summarise(percent_encaps=mean(Nematode_encaps_all>0)*100) %>% ungroup()) +
   geom_col(aes(band_number,percent_encaps),fill="white",col="grey")+
@@ -357,32 +403,45 @@ p_encaps <- ggplot(data=data_parasite  %>%
 preds_nematode <- data %>% 
   select(band_number) %>% 
   distinct() %>% 
-  mutate(scale_size=0, session=1,fusion="no", population="sun_exposed", population2 = "open habitat") %>% 
+  mutate(scale_size=0, session=1, population="sun_exposed") %>% 
   add_fitted_draws(mod,re_formula=NA,resp="Nematodeliveall") %>%  ## but re_formula NA not right for poisson ORLE, right? at least not for mean
-  ungroup()
+  ungroup() %>% 
+  mutate(population = fct_recode(population, `open habitat` = "sun_exposed")) 
 
-p_nema <- ggplot(subset(data,dead==0 & session==1)) +
+p_nema <- ggplot(subset(data,dead==0 & session==1) %>% 
+  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
+  mutate(population = fct_recode(population,
+                                  `shaded habitat` = "shaded",
+                                  `open habitat` = "sun_exposed")) ) +
   geom_jitter(aes(band_number,Nematode_live_all),height=0, col="grey")+
   stat_eye(data=preds_nematode, aes(band_number,.value, fill = band_number),.width=c(0.01,0.95),slab_alpha=0.7, point_interval=mean_hdi)+
   scale_y_continuous("Nematodes")+
   scale_x_discrete("",labels=c("0 bands","3 bands","5 bands"))+
   scale_fill_manual(values=c("#fe9929","#d95f0e","#993404")) +
-  facet_wrap(~population2)
+  facet_wrap(~population)
 
 preds_trematode <- data %>% 
-  select(band_number,is.shaded,population, population2) %>% 
+  select(band_number,is_pop_shaded,population) %>% 
   distinct() %>% 
-  mutate(scale_size=0, session=1,fusion="no") %>% 
+  mutate(scale_size=0, session=1) %>% 
   add_fitted_draws(mod,re_formula=NA,resp="Trematodekidney") %>%  ## but re_formula NA not right for poisson ORLE, right? at least not for mean
-  ungroup()
+  ungroup() %>% 
+  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
+  mutate(population = fct_recode(population,
+                                  `shaded habitat` = "shaded",
+                                  `open habitat` = "sun_exposed")) 
 
-p_trema <- ggplot(subset(data,dead==0 & session==1)) +
+p_trema <- ggplot(subset(data,dead==0 & session==1)%>% 
+  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
+  mutate(population = fct_recode(population,
+                                  `shaded habitat` = "shaded",
+                                  `open habitat` = "sun_exposed")) ) +
   geom_jitter(aes(band_number,Trematode_kidney),height=0,col="grey")+
   stat_eye(data=preds_trematode, aes(band_number,.value, fill=band_number),.width=c(0.01,0.95),slab_alpha=0.7, point_interval=mean_hdi)+
   scale_y_continuous("Trematodes in kidney") +
   scale_x_discrete("Shell phenotype (band number)",labels=c("0 bands","3 bands","5 bands"))+
   scale_fill_manual(values=c("#fe9929","#d95f0e","#993404")) +
-  facet_wrap(~population2)
+  facet_wrap(~population)
 
 p_encaps/p_nema/p_trema & 
   cowplot::theme_half_open(11) &
@@ -396,34 +455,51 @@ absence of effect of trematodes may be due to rarity in overall population (what
 
 ```{r}
 preds_mvt <- data %>% 
-  select(population,population3,band_number, is.shaded,mean_mvt,sd_mvt) %>% 
+  select(population,band_number, is_pop_shaded,mean_mvt,sd_mvt) %>% 
   distinct() %>% 
-  mutate(scale_size=0, session=1, FPT3=0, FPT1=0,fusion="no",has.moved=TRUE) %>% 
+  mutate(scale_size=0, session=1,has_moved=TRUE) %>% 
   add_fitted_draws(mod,re_formula=NA,resp="scalemvt") %>% 
-  mutate(.value=.value*sd_mvt + mean_mvt)
+  ungroup() %>% 
+  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
+  mutate(population = fct_recode(population,
+                                  `shaded habitat (no nematodes)` = "shaded",
+                                  `open habitat (nematodes)` = "sun_exposed")) 
 
 
-p_mvt <- ggplot(subset(data,has.moved==TRUE)) +
-    geom_line(aes(as.numeric(factor(band_number))+0.5*session-0.75,mvt,group=fullID),col="grey")+
-    geom_point(aes(band_number,mvt,pch=FPT3==20,group=session),position=position_dodge(width=1),col="grey",fill="white")+
+p_mvt <- ggplot(subset(data,has_moved==TRUE)%>% 
+  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
+  mutate(population = fct_recode(population,
+                                  `shaded habitat (no nematodes)` = "shaded",
+                                  `open habitat (nematodes)` = "sun_exposed")) ) +
+    geom_line(aes(as.numeric(factor(band_number))+0.5*session-0.75,scale_mvt,group=fullID),col="grey")+
+    geom_point(aes(band_number,scale_mvt,pch=FPT3==20,group=session),position=position_dodge(width=1),col="grey",fill="white")+
     stat_eye(data=preds_mvt,aes(band_number,.value,fill=band_number),
            .width=c(0.01,0.95),slab_alpha=0.7, point_interval=mean_hdi)+
   scale_shape_manual(values=c(16,21))+
   scale_fill_manual(values=c("#fe9929","#d95f0e","#993404")) +
-  scale_y_continuous("Movement speed (unit/min)")+
+  scale_y_continuous("Movement (standardised)")+
   scale_x_discrete("",labels=c("0 bands","3 bands","5 bands"))+
-    facet_wrap(~population3) 
+    facet_wrap(~population) 
 
 
 
 preds_food <- data %>% 
-  select(population,population2,band_number, is.shaded,mean_food,sd_food) %>% 
+  select(population,band_number, is_pop_shaded,mean_food,sd_food) %>% 
   distinct() %>% 
   mutate(scale_size=0, session=1,fusion="no") %>% 
   add_fitted_draws(mod,re_formula=NA,resp="scalefood") %>% 
-  mutate(.value=.value*sd_food + mean_food)
+  mutate(.value=.value*sd_food + mean_food)%>% 
+  ungroup() %>% 
+  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
+  mutate(population = fct_recode(population,
+                                  `shaded habitat (no nematodes)` = "shaded",
+                                  `open habitat (nematodes)` = "sun_exposed")) 
 
-p_food <- ggplot(data) +
+p_food <- ggplot(data %>% 
+  mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
+  mutate(population = fct_recode(population,
+                                  `shaded habitat (no nematodes)` = "shaded",
+                                  `open habitat (nematodes)` = "sun_exposed")) ) +
     geom_point(aes(band_number,Food_intake,group=session),position=position_dodge(width=1),col="grey")+
     geom_line(aes(as.numeric(factor(band_number))+0.5*session-0.75,Food_intake,group=fullID),col="grey")+
     stat_eye(data=preds_food,aes(band_number,.value,fill=band_number),
@@ -431,7 +507,7 @@ p_food <- ggplot(data) +
   scale_fill_manual(values=c("#fe9929","#d95f0e","#993404")) +
   scale_y_continuous("Food intake (g/night)")+
   scale_x_discrete("Shell phenotype (band number)",labels=c("0 bands","3 bands","5 bands"))+
-    facet_wrap(~population3)
+    facet_wrap(~population)
 
 p_mvt/p_food & 
   cowplot::theme_half_open(11) &
