@@ -95,7 +95,7 @@ data<- data  %>%
          sd_food=sd(Food_intake,na.rm=TRUE))
 ```
 
-then movement, which is a little bit more complex:
+then we prep movement, which is a little bit more complex:
 
 
 ```{r data-prep-mvt}
@@ -107,9 +107,9 @@ data <- data %>%
   mutate(has_moved = FPT_2cm < 20) %>%
   mutate(latency=FPT_10cm-FPT_2cm) %>% 
   mutate(mvt = 1/latency) %>%
-  mutate(latency=replace(mvt,which(has_moved == FALSE), NA),
+  mutate(latency=replace(latency,which(has_moved == FALSE), NA),
          mvt = replace(mvt,which(has_moved == FALSE),0)) %>% 
-  # put a zero mvt/ NA latency for the ones that don't move, they will be excluded in model anyway
+  # put a zero mvt/ NA latency for the ones that don't move, they will be excluded in-model anyway
   mutate(mean_mvt = mean(subset(mvt,has_moved ==TRUE)), ##mean and sd for scaling
          sd_mvt = sd(subset(mvt,has_moved ==TRUE))) %>% ## exclude not moving individuals
   mutate(scale_mvt = (mvt - mean_mvt)/sd_mvt)
@@ -117,19 +117,17 @@ data <- data %>%
 ## is time to activity itself actually a relevant variable? NO (not stdised in the petri to, table phase, just let them habituate until they move)
 ```
 
-See the model tests script for why we choose these transformations for movement and food intake data
-
 # Part 2: models 
 
 ## 2A - the model for size
 
 ```{r}
 # ideally would include size as a correlated response in the multivar, not a covariate, but splitting indvar bw sigma and SD is WAY TOO HARD
-mod_size <-brm(bf(scale_size ~ is_pop_shaded * ( band_number + fusion )),
+mod_size <-brm(bf(scale_size ~ is_pop_shaded * (band_number + fusion)),
          data=subset(data,session==1),
                     # size variable is present twice in dataset (to go with behaviour)
                     # subset argument ensures it is counted only once and we don't artificially double the dataset
-         chains=4, iter=2000, warmup=1000,
+         chains=4, iter=4000, warmup=2000,
          prior=c(
            set_prior("normal(0,1)",class="Intercept"),
            set_prior("normal(0,1)",class="b"),
@@ -144,7 +142,113 @@ mod_size <-brm(bf(scale_size ~ is_pop_shaded * ( band_number + fusion )),
 ## pattern same in old cornu data (arcaisCornupheno in phd folder) intermediate vs ferme, ouvert is vineyard (no cepaea there), so something cross specific and cross temp
 ```
 
+
+```{r}
+pp_check(mod_size)
+
+pp_check(mod_size, "stat_2d")
+
+plot(mod_size)
+
+mcmc_rank_hist(mod_size)
+```
+
+seems OK
+
 ## 2B - the multivariate parasite-behaviour model
+
+
+### test the validity of model formulas for behaviours
+
+
+```{r}
+data_test <- data %>% 
+  mutate(food_test = replace(Food_intake,which(Food_intake==0),0.0001))
+
+
+mod_food_test_beta <- brm(
+    bf(food_test/1.5|cens(- 1*(food_test<=0.0001)) ~  # we use left-censoring to allow zero values in a Beta model
+         # in effect we assume that zeroes are actually non-zeroes but below the scale detection limit
+         is_pop_shaded * (band_number + fusion) + 
+         scale_size + (1|series)+(1|fullID)), family=Beta,
+    data=data_test, chains=4,iter=4000,warmup=2000,
+    prior=c(set_prior("normal(0,1)",class="Intercept"),
+            set_prior("normal(0,1)",class="b"),
+            set_prior("normal(0,1)", class="sd")),
+    backend="cmdstanr",seed=42,control=list(adapt_delta=0.99,max_treedepth=15))
+```
+
+
+```{r}
+pp_check(mod_food_test_beta)
+
+```
+
+The Beta model inflates variance compared to data.
+
+Let's just try a Gaussian LMM?
+
+```{r}
+mod_food_test_normal <- brm(
+    bf(scale_food ~
+         is_pop_shaded * (band_number + fusion) + 
+         scale_size + (1|series)+(1|fullID)),
+    data=data, chains=4,iter=4000,warmup=2000,
+    prior=c(set_prior("normal(0,1)",class="Intercept"),
+            set_prior("normal(0,1)",class="b"),
+            set_prior("normal(0,1)", class="sd")),
+    backend="cmdstanr",seed=42,control=list(adapt_delta=0.99,max_treedepth=15))
+```
+
+```{r}
+pp_check(mod_food_test_normal)
+```
+much better!
+
+now we do similar tests with movement. First let's try a model with lognormal:
+
+```{r}
+
+mod_mvt_test_lognormal <- brm(
+  bf(latency|subset(has_moved==TRUE) + ## we exclude non-moving snails 
+         cens(FPT_10cm>=20) ~ is_pop_shaded * (band_number + fusion) + 
+    scale_size + (1|series)+(1|fullID)), family=lognormal,
+    data=data, chains=4,iter=2000,warmup=1000,
+    prior=c(set_prior("normal(0,1)",class="Intercept"), # priors are probably bad but this is just for testing
+                set_prior("normal(0,1)",class="b"),
+                set_prior("normal(0,1)", class="sd"),
+                set_prior("normal(0,1)",class="sigma")),
+        backend="cmdstanr",seed=42,control=list(adapt_delta=0.99,max_treedepth=15))
+```
+
+```{r}
+pp_check(mod_mvt_test_lognormal,"stat_2d")
+```
+same as with food, seems off (not shown, but easy to change from lognormal to Gamma, or other survival-data adapted families, and see they have the same problems)
+
+let's try the Weibull (gamma (not shown): better than lognormal but worse than weibull)
+
+```{r}
+
+mod_mvt_test_weibull <- brm(
+  bf(latency|subset(has_moved==TRUE) + ## we exclude non-moving snails 
+         cens(FPT_10cm>=20) ~ is_pop_shaded * (band_number + fusion) + 
+    scale_size + (1|series)+(1|fullID)), family=weibull(link_shape="log"),
+    data=data, chains=4,iter=2000,warmup=1000,
+    prior=c(set_prior("normal(0,1)",class="Intercept"), # priors are probably bad but this is just for testing
+                set_prior("normal(0,1)",class="b"),
+                set_prior("normal(0,1)", class="sd"),
+                set_prior("normal(0,1)",class="shape")),
+        backend="cmdstanr",seed=42,control=list(adapt_delta=0.99,max_treedepth=15))
+```
+
+
+```{r}
+pp_check(mod_mvt_test_weibull)
+```
+again, way better
+
+### doing the multivariate model
 
 ```{r}
 bf_trema<-bf(
