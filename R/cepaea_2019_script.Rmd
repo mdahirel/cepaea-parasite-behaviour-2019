@@ -346,6 +346,27 @@ table1[c(1,2,3,5,6,7,4,9,8,10),] %>%   # just some reordering
   knitr::kable()
 
 
+
+table2<-summary_mod %>% 
+  mutate(value = paste(round(value,2)," [", round(.lower,2),"; ",round(.upper,2),"]",sep="")) %>% 
+  filter(str_detect(name,"cor_fullID")==TRUE) %>% 
+  mutate(response1 = case_when(
+    str_detect(name,"cor_fullID__Nematode") ~ "Nematode abundance",
+    str_detect(name, "cor_fullID__scalefood") ~ "Food intake",
+    str_detect(name, "cor_fullID__Trematode") ~ "Trematode abundance",
+    str_detect(name,"cor_fullID__scalemvt") ~ "Movement"),
+         response2 = case_when(
+    str_detect(name,"Nematodeliveall_Intercept$") ~ "Nematode abundance",
+    str_detect(name, "scalefood_Intercept$") ~ "Food intake",
+    str_detect(name, "Trematodekidney_Intercept$") ~ "Trematode abundance",
+    str_detect(name,"scalemvt_Intercept$") ~ "Movement")
+  ) %>% 
+  select(response1,response2,value) 
+
+table2
+
+## here we're going to sort manually in manuscript, so we can match the order in table 1
+
 #mcmc_rank_overlay(mod, pars = summary_mod$name)
 ```
 
