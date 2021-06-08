@@ -135,6 +135,8 @@ subset(data_parasite$Acari_live_all,data_parasite$Acari_live_all > 0)
 
 subset(data_parasite$Acari_encaps,data_parasite$Acari_encaps > 0)
 
+table(paste("has encaps", data_parasite$Nematode_encaps_all>0), paste("has live nematodes", data_parasite$Nematode_live_all>0) )
+
 ```
 
 
@@ -551,6 +553,27 @@ p_mvt/p_food &
   plot_annotation(tag_levels="A")
 ```
 
+```{r}
+preds_nematode %>% 
+  mutate(group=paste(band_number,", ",population,sep="")) %>% 
+  compare_levels(.value,by=group, fun = `/`) %>% 
+  mean_hdi()
+
+preds_trematode %>% 
+  mutate(group=paste(band_number,", ",population,sep="")) %>% 
+  compare_levels(.value,by=group, fun = `/`) %>% 
+  mean_hdi()
+
+preds_mvt %>% 
+  mutate(group=paste(band_number,", ",population,sep="")) %>% 
+  compare_levels(.value,by=group) %>% 
+  mean_hdi()
+
+preds_food %>% 
+  mutate(group=paste(band_number,", ",population,sep="")) %>% 
+  compare_levels(.value,by=group) %>% 
+  mean_hdi()
+```
 
 
 no need of complex stuff for repeatabilities, the two repeatable traits are gaussian here
