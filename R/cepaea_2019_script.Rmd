@@ -640,3 +640,69 @@ ggplot(data_parasite)+
   facet_wrap(~population)
 ```
 
+
+
+
+```{r}
+data_parasite %>% 
+  group_by(population,band_number,dead) %>%
+  summarise(preva_trema=mean(Trematode_kidney>0),
+            preva_nema=mean(Nematode_live_all>0),
+            preva_nencaps=mean(Nematode_encaps_all>0),
+            preva_acari=mean(Acari_live_all>0),
+            preva_aaencaps=mean(Acari_encaps>0),
+            abun_trema=mean(Trematode_kidney),
+            abun_nema=mean(Nematode_live_all),
+            abun_nencaps=mean(Nematode_encaps_all),
+            abun_acari=mean(Acari_live_all),
+            abun_aencaps=mean(Acari_encaps))
+
+
+data_parasite %>% 
+  group_by(population,band_number,dead) %>%
+  filter(Trematode_kidney>0) %>% 
+  summarise(N=length(Trematode_kidney),
+            min_inci=min(Trematode_kidney),
+            median_inci=median(Trematode_kidney),
+            mean_inci=mean(Trematode_kidney),
+            max_inci=max(Trematode_kidney))
+
+
+data_parasite %>% 
+  group_by(population,band_number,dead) %>%
+  filter(Nematode_live_all>0) %>% 
+  summarise(N=length(Nematode_live_all),
+            min_inci=min(Nematode_live_all),
+            median_inci=median(Nematode_live_all),
+            mean_inci=mean(Nematode_live_all),
+            max_inci=max(Nematode_live_all))
+
+
+data_parasite %>% 
+  group_by(population,band_number,dead) %>%
+  filter(Nematode_encaps_all>0) %>% 
+  summarise(N=length(Nematode_encaps_all),
+            min_inci=min(Nematode_encaps_all),
+            median_inci=median(Nematode_encaps_all),
+            mean_inci=mean(Nematode_encaps_all),
+            max_inci=max(Nematode_encaps_all))
+
+data_parasite %>% 
+  group_by(population,band_number,dead) %>%
+  filter(Acari_live_all>0) %>% 
+  summarise(N=length(Acari_live_all),
+            min_inci=min(Acari_live_all),
+            median_inci=median(Acari_live_all),
+            mean_inci=mean(Acari_live_all),
+            max_inci=max(Acari_live_all))
+
+data_parasite %>% 
+  group_by(population,band_number,dead) %>%
+  filter(Acari_encaps>0) %>% 
+  summarise(N=length(Acari_encaps),
+            min_inci=min(Acari_encaps),
+            median_inci=median(Acari_encaps),
+            mean_inci=mean(Acari_encaps),
+            max_inci=max(Acari_encaps))
+```
+
