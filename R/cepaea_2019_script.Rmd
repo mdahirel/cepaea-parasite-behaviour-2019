@@ -133,9 +133,9 @@ subset(data_parasite$Nematode_live_all,data_parasite$dead==1)
 subset(data_parasite$Trematode_kidney,data_parasite$dead==1)
 
 
-subset(data_parasite$Acari_live_all,data_parasite$Acari_live_all > 0)
+subset(data_parasite,data_parasite$Acari_live_all > 0)
 
-subset(data_parasite$Acari_encaps,data_parasite$Acari_encaps > 0)
+subset(data_parasite,data_parasite$Acari_encaps > 0)
 
 table(paste("has encaps", data_parasite$Nematode_encaps_all>0), paste("has live nematodes", data_parasite$Nematode_live_all>0) )
 
