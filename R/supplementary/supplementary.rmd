@@ -5,8 +5,6 @@ date:
 output: pdf_document
 editor_options:
   chunk_output_type: console
-bibliography: 
-csl: 
 ---
 
 ```{r setup, include=FALSE}

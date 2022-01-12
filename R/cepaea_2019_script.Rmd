@@ -28,13 +28,14 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE, message = FALSE)
 ## 1A - packages
 
 ```{r packages-loading}
+library(matrixStats)
+
 library(cmdstanr) ## Stan backend
 library(brms) ## the interface we are using
 
 library(tidyverse)
 library(bayesplot)
 library(tidybayes)
-library(matrixStats)
 library(patchwork) #plotting
 
 library(here)
@@ -53,11 +54,12 @@ raw_parasite <- read_csv(here("data","cepaea_2019_parasite.csv"))
 
  <!--to do: description of the original datasets-->
  
- Total body mass was additionally recorded (see **Data availability**) but was not used in further analyses due to the high within-individual variability of water content [@howesWaterRelationsSnails1934] and the *a priori* unknown contributions of parasites to total mass.
+ Total body mass was additionally recorded (see **Data availability**) but was not used in further analyses due to the high within-individual variability of water content and the *a priori* unknown contributions of parasites to total mass.
 
 ## 1C – data cleaning and wrangling
 
 Nematodes were divided by size class (live ones) and whether they were found on dark or light parts of the shells (encapsulated): for analysis we create variables summing up these:
+
 ```{r data-prep1}
 data_parasite<-raw_parasite %>%
   mutate(population = fct_relevel(factor(population),"shaded",after=Inf)) %>% 
