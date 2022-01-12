@@ -1,0 +1,41 @@
+---
+title: 'Supplementary Material for "Morph-dependent effect of nematode infection on host movement in the land snail *Cepaea nemoralis* (Mollusca, Gastropoda)"'
+author: "Maxime Dahirel, Marine Proux, Armelle Ansart, Claudia Gérard"
+date:
+output: pdf_document
+editor_options:
+  chunk_output_type: console
+bibliography: 
+csl: 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, warning = FALSE,
+  message = FALSE, eval = TRUE, dev = "cairo_pdf"
+)
+## cairo is needed as device to properly render the plots with greek letters in pdf
+```
+
+```{r load-packages}
+
+library(tidyverse)   # CRAN v1.3.1
+
+library(here)        # CRAN v1.0.1
+```
+
+# S1 - detailed math description of both models
+
+# S2 - descriptive stats about parasites 
+
+(morph and population specific prevalence, as well as min/mean/median/max CI abundance and/or intensities)
+
+
+# S3 - pairwise posterior comparisons for each trait
+
+# S4 -  Posterior proportion of total variance associated with fixed effects vs. random effects, for both behavioural traits with repeated measures. 
+
+See **Methods** and **Supplementary Material 1** for a description of the model underlying these estimates.
+
+
+# References
