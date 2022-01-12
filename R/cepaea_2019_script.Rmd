@@ -46,15 +46,59 @@ options(mc.cores = 4) ## reduce/increase depending on cores available on your ma
 
 ## 1B – data loading
 
-we load
+We start by loading the raw data, which are presented as two separate files: `raw_behaviour` and `raw_parasite`. This is because behaviours are measured twice while parasites once.
+
 ```{r data-load}
 raw_behaviour <- read_csv(here("data","cepaea_2019_behaviour.csv"))
 raw_parasite <- read_csv(here("data","cepaea_2019_parasite.csv"))
 ```
 
- <!--to do: description of the original datasets-->
- 
- Total body mass was additionally recorded (see **Data availability**) but was not used in further analyses due to the high within-individual variability of water content and the *a priori* unknown contributions of parasites to total mass.
+Variables common to both datasets (typically encoding general characteristics of the populations and individuals) are:
+
+- `population`: two levels, "shaded" or "sun_exposed" (see main text for details about each population);
+
+- `series`: snails were split in three experimental groups that started the experiment each at a different time (see manuscript). This variable identifies the experimental group the snail belongs to;
+
+- `group`: a dummy variable related to the ID code written on each snail. !!! Not to be confused with `series` or `session`;
+
+- `fullID`: unique individual identifier;
+
+- `band_number`: whether a snail has 0, 3 or 5 bands on its shell (categorical variable);
+
+- `fusion`: whether bands are fused, if there are bands present;
+
+- `shell_diameter`: greatest shell diameter, in mm;
+
+- `total_mass` (in g): recorded at the same time as shell diameter, but was not used in further analyses due to the high within-individual variability of water content and the *a priori* unknown contributions of parasites to total mass;
+
+- `shell_mass` (in g);
+
+- `dead`(binary): whether the individual died before the end of the experiment.
+
+
+Variables present in the `raw behaviour` dataset only:
+
+- `session`: behaviours were observed twice for each individual. This variable tells us whether the observation was the first or the second one (not be confused with `series`);
+
+- `FPT1`, `FPT2` and `FPT3`: time to cross different thresholds (First Passage Time) during the movement trials. `FPT1` is the time to move 2cm away from starting point (we actually don't count snails as active before they crossed that threshold), `FPT2` and `FPT3` are 5 and 10 cm away (largest possible value is 1200 seconds, since observations were stopped after 20 min);
+
+- `Food_intake`: Quantity of food consumed (out of 1.5 g) during food intake tests.
+
+
+Variables present in the `raw parasite` dataset only:
+
+- `Nematode_0_1_free`, `Nematode_1_3_free`, `Nematode_3_5_free`, `Nematode_5_plus_free`: counts of nematode (unidentified) found free between the shell and the body of snails. Nematodes of different size classes were counted separately, respectively <1mm long, between 1 and 3 mm, between 3 and 5 mm, longer than 5 mm (all live nematodes are pooled later and these sub-counts are not used here);
+
+- `Nematode_1_3_lung`, `Nematode_3_5_lung`, `Nematode_5_plus_lung`: same as above, for nematodes found in the lung;
+
+- `Nematode_white_encaps`, `Nematode_dark_encaps`: counts of nematodes found trapped, encapsulated in the snail's shell. Counts are split between nematodes found trapped in the light vs dark parts of the shell;
+
+- `Acari_kidney`, `Acari_digestive`: mites found in the kidney and digestive gland of snails;  
+
+- `Acari_encaps`: encapsulated mites; 
+
+- `Trematode_kidney`: trematodes found in the kidney (all were *Brachylaima* metacercariae).
+
 
 ## 1C – data cleaning and wrangling
 
