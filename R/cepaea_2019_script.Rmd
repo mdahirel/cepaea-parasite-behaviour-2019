@@ -492,7 +492,7 @@ preds_size <- data %>%
     `shaded habitat` = "shaded",
     `open habitat` = "sun_exposed"
   )) %>%
-  mutate(.value = (.epred * sd_size) + mean_size) # we back-transform
+  mutate(.epred = (.epred * sd_size) + mean_size) # we back-transform
 ```
 
 We use these predictions to look at differences between morphs and populations
@@ -502,14 +502,14 @@ We use these predictions to look at differences between morphs and populations
 preds_size %>%
   mutate(.iteration = .draw) %>%
   group_by(population) %>%
-  compare_levels(variable = .value, by = band_number) %>%
+  compare_levels(variable = .epred, by = band_number) %>%
   mean_hdi()
 
 
 preds_size %>%
   mutate(.iteration = .draw) %>%
   group_by(band_number) %>%
-  compare_levels(variable = .value, by = population) %>%
+  compare_levels(variable = .epred, by = population) %>%
   mean_hdi()
 ```
 
@@ -524,7 +524,7 @@ ggplot(subset(data, dead == 0 & session == 1) %>%
   geom_jitter(aes(band_number, shell_diameter), 
               height = 0, col = "grey") +
   stat_eye(data = preds_size, 
-           aes(band_number, .value, fill = band_number), 
+           aes(band_number, .epred, fill = band_number), 
            .width = c(0.01, 0.95), 
            slab_alpha = 0.7) +
   scale_y_continuous("Shell diameter (mm)") +
@@ -572,7 +572,7 @@ Then we do the live nematode subfigure. Like with size, we create predictions fi
 preds_nematode <- data %>%
   select(band_number) %>%
   distinct() %>%
-  mutate(scale_size = 0, session = 1, population = "sun_exposed") %>%
+  mutate(scale_size = 0, session = 1, population = "sun_exposed") %>%  ## predictions are made at the average size
   add_epred_draws(mod_multi, re_formula = NA, resp = "Nematodeliveall") %>%
   ungroup() %>%
   mutate(population = fct_recode(population, `open habitat` = "sun_exposed"))
@@ -628,7 +628,7 @@ p_trema <- ggplot(subset(data, dead == 0 & session == 1) %>%
 
 We can then put the pieces of the puzzle together:
 
-```{r fig2}
+```{r fig3}
 p_encaps / p_nema / p_trema &
   cowplot::theme_half_open(11) &
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") &
@@ -654,12 +654,14 @@ preds_trematode %>%
 
 ## Figure 4 - behaviour info
 
-```{r}
+We basically do the same for this figure about behaviour results, with one nuance. Since behaviour were measured twice, we need a way to link observations from the same individual together
+
+```{r fig-movement}
 preds_mvt <- data %>%
   select(population, band_number, mean_mvt, sd_mvt) %>%
   distinct() %>%
-  mutate(scale_size = 0, session = 1, has_moved = TRUE) %>%
-  add_fitted_draws(mod, re_formula = NA, resp = "scalemvt") %>%
+  mutate(scale_size = 0, session = 1, is_active = TRUE) %>%
+  add_epred_draws(mod_multi, re_formula = NA, resp = "scalemvt") %>%
   ungroup() %>%
   mutate(population = fct_recode(population,
     `shaded habitat (no nematodes)` = "shaded",
@@ -667,31 +669,41 @@ preds_mvt <- data %>%
   ))
 
 
-p_mvt <- ggplot(subset(data, has_moved == TRUE) %>%
+p_mvt <- ggplot(subset(data, is_active == TRUE) %>%
   mutate(population = fct_recode(population,
     `shaded habitat (no nematodes)` = "shaded",
     `open habitat (nematodes)` = "sun_exposed"
   ))) +
-  geom_line(aes(as.numeric(factor(band_number)) + 0.5 * session - 0.75, scale_mvt, group = fullID), col = "grey") +
-  geom_point(aes(band_number, scale_mvt, pch = FPT3 == 20, group = session), position = position_dodge(width = 1), col = "grey", fill = "white") +
+  geom_line(aes(
+    as.numeric(factor(band_number)) + 0.5 * session - 0.75, ## this is some taped-together solution to draw a line connecting the points together
+    scale_mvt, group = fullID), 
+    col = "grey") +
+  geom_point(aes(
+    band_number, scale_mvt, pch = FPT3 == 20, 
+    group = session), 
+    position = position_dodge(width = 1), 
+    col = "grey", 
+    fill = "white") +
   stat_eye(
-    data = preds_mvt, aes(band_number, .value, fill = band_number),
-    .width = c(0.01, 0.95), slab_alpha = 0.7, point_interval = mean_hdi
+    data = preds_mvt, 
+    aes(band_number, .epred, fill = band_number),
+    .width = c(0.01, 0.95), slab_alpha = 0.7, 
+    point_interval = mean_hdi
   ) +
   scale_shape_manual(values = c(16, 21)) +
   scale_fill_manual(values = c("#fe9929", "#d95f0e", "#993404")) +
   scale_y_continuous("Movement (standardised)") +
   scale_x_discrete("", labels = c("0 bands", "3 bands", "5 bands")) +
   facet_wrap(~population)
+```
 
-
-
+```{r fig-food}
 preds_food <- data %>%
   select(population, band_number, mean_food, sd_food) %>%
   distinct() %>%
-  mutate(scale_size = 0, session = 1, fusion = "no") %>%
-  add_fitted_draws(mod, re_formula = NA, resp = "scalefood") %>%
-  mutate(.value = .value * sd_food + mean_food) %>%
+  mutate(scale_size = 0, session = 1) %>%
+  add_epred_draws(mod_multi, re_formula = NA, resp = "scalefood") %>%
+  mutate(.epred = .epred * sd_food + mean_food) %>%
   ungroup() %>%
   mutate(population = fct_recode(population,
     `shaded habitat (no nematodes)` = "shaded",
@@ -703,17 +715,28 @@ p_food <- ggplot(data %>%
     `shaded habitat (no nematodes)` = "shaded",
     `open habitat (nematodes)` = "sun_exposed"
   ))) +
-  geom_point(aes(band_number, Food_intake, group = session), position = position_dodge(width = 1), col = "grey") +
-  geom_line(aes(as.numeric(factor(band_number)) + 0.5 * session - 0.75, Food_intake, group = fullID), col = "grey") +
+  geom_point(
+    aes(band_number, Food_intake, group = session), 
+    position = position_dodge(width = 1), col = "grey") +
+  geom_line(
+    aes(as.numeric(factor(band_number)) + 0.5 * session - 0.75, 
+        Food_intake, group = fullID), 
+    col = "grey") +
   stat_eye(
-    data = preds_food, aes(band_number, .value, fill = band_number),
-    .width = c(0.01, 0.95), slab_alpha = 0.7, point_interval = mean_hdi
+    data = preds_food, 
+    aes(band_number, .epred, fill = band_number),
+    .width = c(0.01, 0.95), slab_alpha = 0.7, 
+    point_interval = mean_hdi
   ) +
   scale_fill_manual(values = c("#fe9929", "#d95f0e", "#993404")) +
-  scale_y_continuous("Food intake (g/night)") +
-  scale_x_discrete("Shell phenotype (band number)", labels = c("0 bands", "3 bands", "5 bands")) +
+  scale_y_continuous("Food intake (g)") +
+  scale_x_discrete("Shell phenotype (band number)", 
+                   labels = c("0 bands", "3 bands", "5 bands")) +
   facet_wrap(~population)
+```
 
+
+```{r fig4}
 p_mvt / p_food &
   cowplot::theme_half_open(11) &
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") &
@@ -721,11 +744,29 @@ p_mvt / p_food &
   plot_annotation(tag_levels = "A")
 ```
 
+And just like with parasites, we can do posterior comparisons (here they're differences)
+
+```{r behaviour-comparisons}
+
+preds_mvt %>%
+  mutate(group = paste(band_number, ", ", population, sep = "")) %>%
+  compare_levels(.epred, by = group) %>%
+  mean_hdi()
+
+preds_food %>%
+  mutate(group = paste(band_number, ", ", population, sep = "")) %>%
+  compare_levels(.epred, by = group) %>%
+  mean_hdi()
+```
 
 ## Table 1 - multivariate model summary
 
-```{r}
-summary_mod <- mod %>%
+Table 1 display the fixed effect coefficients values, and the random effects/ residual SDs. We do some cleaning/ordering so that the output can be directly copied into the markdown file of the manuscript
+
+First we create a general summary table that is easier to interrogate than the summary() object, and that uses HDIs as intervals rather than quantile intervals:
+
+```{r general-summary}
+summary_mod <- mod_multi %>%
   posterior_samples() %>%
   select(starts_with(c("Intercept", "b_", "sd_", "cor_fullID", "sigma"))) %>%
   pivot_longer(everything()) %>%
@@ -734,8 +775,10 @@ summary_mod <- mod %>%
 
 summary_mod %>%
   print(n = Inf)
+```
 
-
+Then we use it to built Table 1
+```{r table1}
 table1 <- summary_mod %>%
   mutate(value = paste(round(value, 2), " [", round(.lower, 2), "; ", round(.upper, 2), "]", sep = "")) %>%
   filter(str_detect(name, "cor_fullID") == FALSE) %>%
@@ -760,20 +803,23 @@ table1 <- summary_mod %>%
   )) %>%
   select(coefficient, trait, value) %>%
   pivot_wider(names_from = "trait", values_from = "value") %>%
-  select(coefficient, `Nematode abundance`, `Trematode abundance`, `Movement`, `Food intake`) %>%
+  select(coefficient, 
+         `Nematode abundance`, `Trematode abundance`, 
+         `Movement`, `Food intake`) %>%
   unnest(cols = c())
 
 table1[c(1, 2, 3, 5, 6, 7, 4, 9, 8, 10), ] %>% # just some reordering
   knitr::kable()
 ```
 
-
 ## Table 2 - multivariate model correlation table
 
-```{r}
+And we use the correlation component of the summary for table 2
+
+```{r table2}
 table2 <- summary_mod %>%
-  mutate(value = paste(round(value, 2), " [", round(.lower, 2), "; ", round(.upper, 2), "]", sep = "")) %>%
   filter(str_detect(name, "cor_fullID") == TRUE) %>%
+  mutate(value = paste(round(value, 2), " [", round(.lower, 2), "; ", round(.upper, 2), "]", sep = "")) %>%
   mutate(
     response1 = case_when(
       str_detect(name, "cor_fullID__Nematode") ~ "Nematode abundance",
@@ -791,36 +837,25 @@ table2 <- summary_mod %>%
   select(response1, response2, value)
 
 table2
-
-## here we're going to sort manually in manuscript, so we can match the order in table 1
-
-# mcmc_rank_overlay(mod, pars = summary_mod$name)
 ```
 
-
-```{r}
-
-preds_mvt %>%
-  mutate(group = paste(band_number, ", ", population, sep = "")) %>%
-  compare_levels(.value, by = group) %>%
-  mean_hdi()
-
-preds_food %>%
-  mutate(group = paste(band_number, ", ", population, sep = "")) %>%
-  compare_levels(.value, by = group) %>%
-  mean_hdi()
-```
+Here it's a bit harder to get a near-manuscript ready table (because the response1 response2 doesn't match the rows/columns that would make the most sense). But the table is small, so it's easy to copy paste the contents of the `value` column back to the manuscript markdown file
 
 ## Some other useful outputs
 
-```{r}
-# a plot to look at the size of the dead snail relative to the others
+Here's a plot that places the snail excluded because it died (in red) within the size distribution of all the other snails
+
+```{r dead-size}
 ggplot(data_parasite) +
   geom_boxplot(aes(band_number, shell_diameter)) +
   geom_point(
     data = subset(data_parasite, dead == 1),
     aes(band_number, shell_diameter), col = "red", size = 2
   ) +
+  scale_y_continuous("Shell diameter (mm)") +
+  scale_x_discrete("Shell phenotype (band number)", 
+                   labels = c("0 bands", "3 bands", "5 bands"))+
   facet_wrap(~population)
 ```
 
+It was smaller than average, but not exceptionally so
