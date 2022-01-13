@@ -397,38 +397,41 @@ ggplot(data)+
 
 ## 2D - actually doing the multivariate model
 
-```{r}
-bf_trema <- bf(
-  Trematode_kidney | subset(session == 1) ~
+We start by writing the model formulas for each variable:
+
+```{r multi-model-formulas}
+bf_trema <- bf(Trematode_kidney | subset(session == 1) ~  # for the parasite submodels, we subset to avoid duplication (see above in size model)
   0 + band_number + band_number:population + scale_size +
     (1 | series) + (1 | q | fullID),
   family = poisson
 )
 
-bf_nema_live <- bf(
-  Nematode_live_all | subset(session == 1 & population == "sun_exposed") ~
+bf_nema_live <- bf( Nematode_live_all | subset(session == 1 & population == "sun_exposed") ~ 
+                      # no nematode in the shaded population
   0 + band_number + scale_size +
     (1 | series) + (1 | q | fullID),
   family = poisson
-)
+  )
 
 bf_food <- bf(scale_food ~
-0 + band_number + band_number:population + scale_size +
-  (1 | series) + (1 | q | fullID))
+                0 + band_number + band_number:population + scale_size +
+                (1 | series) + (1 | q | fullID),
+              family=gaussian
+              )
 
-bf_mvt <- bf(
-  scale_mvt | subset(has_moved == TRUE) ~
-  0 + band_number + band_number:population + scale_size +
-    (1 | series) + (1 | q | fullID)
-)
+bf_mvt <- bf(scale_mvt | subset(is_active == TRUE) ~ # we exclude the non-active observations
+     0 + band_number + band_number:population + scale_size +
+    (1 | series) + (1 | q | fullID),
+  family = gaussian
+  )
+```
 
-## group column is actually just lettercode, worth renaming removing?
-## true grouping variable is series, snails boxed by band*landscape, 10 of each taken in series, then replaced in box before second test
+(note the notation of the individual random effect 1|q|fullID, the q is here to denote that the random effects belong to the same covariance matrix)
 
-mod <- brm(mvbf(bf_food + bf_trema + bf_nema_live + bf_mvt),
-  data = data,
-  chains = 4, iter = 4000, warmup = 2000,
-  prior = c(
+Then we write the priors:
+
+```{r multi-model-priors}
+prior <- c(
     set_prior("normal(0,1)",
       class = "b",
       resp = c("Trematodekidney", "Nematodeliveall", "scalefood", "scalemvt")
@@ -439,11 +442,41 @@ mod <- brm(mvbf(bf_food + bf_trema + bf_nema_live + bf_mvt),
     ),
     set_prior("normal(0,1)", class = "sigma", resp = c("scalemvt", "scalefood")),
     set_prior("lkj(2)", class = "cor")
-  ),
-  backend = "cmdstanr", seed = 42, control = list(adapt_delta = 0.99, max_treedepth = 10)
+  )
+```
+
+Then we build the model:
+
+```{r multi-model}
+mod <- brm(mvbf(bf_food + bf_trema + bf_nema_live + bf_mvt),
+  data = data,
+  chains = 4, iter = 4000, warmup = 2000,
+  prior = prior,
+  backend = "cmdstanr", seed = 42, 
+  control = list(adapt_delta = 0.99, max_treedepth = 10)
+)
+
+summary(mod)
+```
+
+Fits fast and without major problems. Let's do some other checks:
+
+```{r multi-model-ppchecks}
+pp_check(mod,resp="scalefood")
+pp_check(mod,resp="Nematodeliveall")
+pp_check(mod,resp="Trematodekidney")
+
+
+newdata <- subset(data, is_active == TRUE)
+ppc_dens_overlay(
+  yrep = (predict(mod, resp="scalemvt",newdata = newdata, summary = FALSE)[1:100, ]),
+  y = newdata$scale_mvt
 )
 ```
 
+Now we can move to building the tables and the figures
+
+# Part 3 - figures, tables and other outputs
 
 ```{r}
 summary_mod <- mod %>%
@@ -518,8 +551,6 @@ table2
 
 
 
-
-# figures and predictions
 
 ## on shell size
 
