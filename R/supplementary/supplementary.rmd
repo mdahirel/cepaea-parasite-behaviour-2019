@@ -29,11 +29,149 @@ library(here)        # CRAN v1.0.1
 (morph and population specific prevalence, as well as min/mean/median/max CI abundance and/or intensities)
 
 
+
+
+```{r}
+data_parasite %>%
+  group_by(population, band_number, dead) %>%
+  summarise(
+    preva_trema = mean(Trematode_kidney > 0),
+    preva_nema = mean(Nematode_live_all > 0),
+    preva_nencaps = mean(Nematode_encaps_all > 0),
+    preva_acari = mean(Acari_live_all > 0),
+    preva_aaencaps = mean(Acari_encaps > 0),
+    abun_trema = mean(Trematode_kidney),
+    abun_nema = mean(Nematode_live_all),
+    abun_nencaps = mean(Nematode_encaps_all),
+    abun_acari = mean(Acari_live_all),
+    abun_aencaps = mean(Acari_encaps)
+  )
+
+
+data_parasite %>%
+  group_by(population, band_number, dead) %>%
+  filter(Trematode_kidney > 0) %>%
+  summarise(
+    N = length(Trematode_kidney),
+    min_inci = min(Trematode_kidney),
+    median_inci = median(Trematode_kidney),
+    mean_inci = mean(Trematode_kidney),
+    max_inci = max(Trematode_kidney)
+  )
+
+
+data_parasite %>%
+  group_by(population, band_number, dead) %>%
+  filter(Nematode_live_all > 0) %>%
+  summarise(
+    N = length(Nematode_live_all),
+    min_inci = min(Nematode_live_all),
+    median_inci = median(Nematode_live_all),
+    mean_inci = mean(Nematode_live_all),
+    max_inci = max(Nematode_live_all)
+  )
+
+
+data_parasite %>%
+  group_by(population, band_number, dead) %>%
+  filter(Nematode_encaps_all > 0) %>%
+  summarise(
+    N = length(Nematode_encaps_all),
+    min_inci = min(Nematode_encaps_all),
+    median_inci = median(Nematode_encaps_all),
+    mean_inci = mean(Nematode_encaps_all),
+    max_inci = max(Nematode_encaps_all)
+  )
+
+data_parasite %>%
+  group_by(population, band_number, dead) %>%
+  filter(Acari_live_all > 0) %>%
+  summarise(
+    N = length(Acari_live_all),
+    min_inci = min(Acari_live_all),
+    median_inci = median(Acari_live_all),
+    mean_inci = mean(Acari_live_all),
+    max_inci = max(Acari_live_all)
+  )
+
+data_parasite %>%
+  group_by(population, band_number, dead) %>%
+  filter(Acari_encaps > 0) %>%
+  summarise(
+    N = length(Acari_encaps),
+    min_inci = min(Acari_encaps),
+    median_inci = median(Acari_encaps),
+    mean_inci = mean(Acari_encaps),
+    max_inci = max(Acari_encaps)
+  )
+```
+
+
 # S3 - pairwise posterior comparisons for each trait
 
 # S4 -  Posterior proportion of total variance associated with fixed effects vs. random effects, for both behavioural traits with repeated measures. 
 
 See **Methods** and **Supplementary Material 1** for a description of the model underlying these estimates.
+
+<!--need to reimport, and so save, the big multivariate model-->
+
+no need of complex stuff for repeatabilities, the two repeatable traits are gaussian here
+
+```{r}
+## expressed on scale components but OK because we plot % of variance
+varcomps_mvt <- tibble(
+  VF = rowVars(posterior_linpred(mod, re_formula = NA, resp = "scalemvt")),
+  VI = VarCorr(mod, summary = FALSE)$fullID$sd[, "scalemvt_Intercept"]^2,
+  Vseries = VarCorr(mod, summary = FALSE)$series$sd[, "scalemvt_Intercept"]^2,
+  VR = (posterior_samples(mod, pars = "sigma_scalemvt")[, 1])^2
+) %>%
+  mutate(
+    trait = "mvt",
+    VP = VF + VI + Vseries + VR
+  )
+
+varcomps_food <- tibble(
+  VF = rowVars(posterior_linpred(mod, re_formula = NA, resp = "scalefood")),
+  VI = VarCorr(mod, summary = FALSE)$fullID$sd[, "scalefood_Intercept"]^2,
+  Vseries = VarCorr(mod, summary = FALSE)$series$sd[, "scalefood_Intercept"]^2,
+  VR = (posterior_samples(mod, pars = "sigma_scalefood")[, 1])^2
+) %>%
+  mutate(
+    trait = "food",
+    VP = VF + VI + Vseries + VR
+  )
+
+rbind(varcomps_food, varcomps_mvt) %>%
+  group_by(trait) %>%
+  pivot_longer(cols = c(VF, VI, Vseries, VR), names_to = "varcomp", values_to = "variance") %>%
+  ungroup() %>%
+  mutate(varcomp = fct_recode(varcomp,
+    `fixed effects` = "VF",
+    individual = "VI",
+    `test group` = "Vseries",
+    residuals = "VR"
+  )) %>%
+  mutate(varcomp = fct_relevel(varcomp, rev)) %>%
+  mutate(varcomp = fct_relevel(varcomp, "test group", after = 1)) %>%
+  mutate(trait = fct_recode(trait,
+    `Food intake` = "food",
+    `Movement speed` = "mvt"
+  )) %>%
+  ggplot() +
+  stat_halfeye(aes(y = varcomp, x = 100 * variance / VP),
+    point_interval = mean_hdi, .width = c(0.001, 0.95),
+    normalize = "xy"
+  ) +
+  facet_wrap(~trait) +
+  scale_x_continuous(
+    name = "Variance explained (%, observed scale)", lim = c(0, 100),
+    breaks = seq(from = 0, to = 100, by = 10)
+  ) +
+  scale_y_discrete(name = "Variance component") +
+  cowplot::theme_half_open(11) +
+  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+```
+
 
 
 # References

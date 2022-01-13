@@ -113,7 +113,8 @@ data_parasite <- raw_parasite %>%
            Nematode_3_5_lung + Nematode_5_plus_lung,
          Nematode_encaps_all = Nematode_white_encaps + Nematode_dark_encaps,
          Acari_live_all = Acari_kidney + Acari_digestive
-         )
+         ) %>% 
+  mutate(session = 1)
 ```
 
 we then merge this with the behaviour dataset, and remove the dead snail here:
@@ -228,7 +229,7 @@ mod_size <- brm(
 Let's do some basic checks (list below not exhaustive, see vignettes of the `tidybayes` package)
 
 ```{r model-size-checks}
-pp_check(mod_size)
+pp_check(mod_size,ndraws=100)
 pp_check(mod_size, "stat_2d")
 plot(mod_size)
 mcmc_rank_hist(mod_size)
@@ -265,7 +266,7 @@ mod_food_test_beta <- brm(
   backend = "cmdstanr", seed = 42, control = list(adapt_delta = 0.99, max_treedepth = 15)
 )
 
-pp_check(mod_food_test_beta)
+pp_check(mod_food_test_beta,ndraws=100)
 pp_check(mod_food_test_beta,"stat_2d")
 ```
 
@@ -286,7 +287,7 @@ mod_food_test_normal <- brm(
   backend = "cmdstanr", seed = 42, control = list(adapt_delta = 0.99, max_treedepth = 15)
 )
 
-pp_check(mod_food_test_normal)
+pp_check(mod_food_test_normal,ndraws=100)
 ```
 
 It's much better (there may be some divergence diagnostics. We should usually worry about them a bit more, but they are absent from the final big multivariate model below, which is the model we are interested in).
@@ -345,7 +346,7 @@ mod_mvt_test_normal <- brm(
   backend = "cmdstanr", seed = 42, control = list(adapt_delta = 0.99, max_treedepth = 15)
 )
 
-pp_check(mod_mvt_test_normal)
+pp_check(mod_mvt_test_normal,ndraws=100)
 ```
 
 This looks way better. Note that the even better approach would be to add left-censoring to the few active-but-did-not-cross the border snails (because their movement is low we don't really know how low):
@@ -448,7 +449,7 @@ prior <- c(
 Then we build the model:
 
 ```{r multi-model}
-mod <- brm(mvbf(bf_food + bf_trema + bf_nema_live + bf_mvt),
+mod_multi <- brm(mvbf(bf_food + bf_trema + bf_nema_live + bf_mvt),
   data = data,
   chains = 4, iter = 4000, warmup = 2000,
   prior = prior,
@@ -456,117 +457,45 @@ mod <- brm(mvbf(bf_food + bf_trema + bf_nema_live + bf_mvt),
   control = list(adapt_delta = 0.99, max_treedepth = 10)
 )
 
-summary(mod)
+summary(mod_multi)
+
+## check that the subset arguments behaved correctly: there should be no NA-related warnings despite NAs in the dataset
+## (because they've been "subsetted out")
+## and the number of observations at the top of the summary should be = to the size of the dataset
 ```
 
 Fits fast and without major problems. Let's do some other checks:
 
 ```{r multi-model-ppchecks}
-pp_check(mod,resp="scalefood")
-pp_check(mod,resp="Nematodeliveall")
-pp_check(mod,resp="Trematodekidney")
-
-
-newdata <- subset(data, is_active == TRUE)
-ppc_dens_overlay(
-  yrep = (predict(mod, resp="scalemvt",newdata = newdata, summary = FALSE)[1:100, ]),
-  y = newdata$scale_mvt
-)
+pp_check(mod_multi,resp="scalefood",ndraws=100)
+pp_check(mod_multi,resp="Nematodeliveall",ndraws=100)
+pp_check(mod_multi,resp="Trematodekidney",ndraws=100)
+pp_check(mod_multi,resp="scalemvt",ndraws=100)
 ```
 
 Now we can move to building the tables and the figures
 
-# Part 3 - figures, tables and other outputs
+# Part 3 - figures, tables and other useful outputs
 
-```{r}
-summary_mod <- mod %>%
-  posterior_samples() %>%
-  select(starts_with(c("Intercept", "b_", "sd_", "cor_fullID", "sigma"))) %>%
-  pivot_longer(everything()) %>%
-  group_by(name) %>%
-  mean_hdi()
+## Figure 1 - body size
 
-summary_mod %>%
-  print(n = Inf)
-
-
-table1 <- summary_mod %>%
-  mutate(value = paste(round(value, 2), " [", round(.lower, 2), "; ", round(.upper, 2), "]", sep = "")) %>%
-  filter(str_detect(name, "cor_fullID") == FALSE) %>%
-  mutate(trait = case_when(
-    str_detect(name, "Nematode") ~ "Nematode abundance",
-    str_detect(name, "Trematode") ~ "Trematode abundance",
-    str_detect(name, "food") ~ "Food intake",
-    str_detect(name, "scalemvt") ~ "Movement",
-    TRUE ~ "ERROR"
-  )) %>%
-  mutate(coefficient = case_when(
-    str_detect(name, "sigma") ~ "Residual SD",
-    str_detect(name, "sd_series") ~ "Test group SD",
-    str_detect(name, "sd_fullID") ~ "Individual-level SD",
-    str_detect(name, "size") ~ "Shell size (standardised)",
-    str_detect(name, "5B:populationshaded") ~ "Population = \"shaded\"~[5 bands]~",
-    str_detect(name, "3B:populationshaded") ~ "Population = \"shaded\"~[3 bands]~",
-    str_detect(name, "0B:populationshaded") ~ "Population = \"shaded\"~[0 bands]~",
-    str_detect(name, "5B$") ~ "Intercept~[5 bands]~",
-    str_detect(name, "3B$") ~ "Intercept~[3 bands]~",
-    str_detect(name, "0B$") ~ "Intercept~[0 bands]~",
-  )) %>%
-  select(coefficient, trait, value) %>%
-  pivot_wider(names_from = "trait", values_from = "value") %>%
-  select(coefficient, `Nematode abundance`, `Trematode abundance`, `Movement`, `Food intake`) %>%
-  unnest(cols = c())
-
-table1[c(1, 2, 3, 5, 6, 7, 4, 9, 8, 10), ] %>% # just some reordering
-  knitr::kable()
-
-
-
-table2 <- summary_mod %>%
-  mutate(value = paste(round(value, 2), " [", round(.lower, 2), "; ", round(.upper, 2), "]", sep = "")) %>%
-  filter(str_detect(name, "cor_fullID") == TRUE) %>%
-  mutate(
-    response1 = case_when(
-      str_detect(name, "cor_fullID__Nematode") ~ "Nematode abundance",
-      str_detect(name, "cor_fullID__scalefood") ~ "Food intake",
-      str_detect(name, "cor_fullID__Trematode") ~ "Trematode abundance",
-      str_detect(name, "cor_fullID__scalemvt") ~ "Movement"
-    ),
-    response2 = case_when(
-      str_detect(name, "Nematodeliveall_Intercept$") ~ "Nematode abundance",
-      str_detect(name, "scalefood_Intercept$") ~ "Food intake",
-      str_detect(name, "Trematodekidney_Intercept$") ~ "Trematode abundance",
-      str_detect(name, "scalemvt_Intercept$") ~ "Movement"
-    )
-  ) %>%
-  select(response1, response2, value)
-
-table2
-
-## here we're going to sort manually in manuscript, so we can match the order in table 1
-
-# mcmc_rank_overlay(mod, pars = summary_mod$name)
-```
-
-
-
-
-
-## on shell size
+First we generate predictions for size. We create a table containing the 6 combinations of bands and population, and we add to it the predictions, and then we back-transform them using the stored means and SD:
 
 ```{r preds-size}
 preds_size <- data %>%
   select(band_number, population, mean_size, sd_size) %>%
   distinct() %>%
   mutate(session = 1) %>%
-  add_fitted_draws(mod_size) %>%
+  add_epred_draws(mod_size) %>%
   ungroup() %>%
   mutate(population = fct_recode(population,
     `shaded habitat` = "shaded",
     `open habitat` = "sun_exposed"
   )) %>%
-  mutate(.value = (.value * sd_size) + mean_size) # we back-transform
+  mutate(.value = (.epred * sd_size) + mean_size) # we back-transform
 ```
+
+We use these predictions to look at differences between morphs and populations
 
 ```{r compare-size}
 
@@ -584,15 +513,20 @@ preds_size %>%
   mean_hdi()
 ```
 
+And we plot them alongside the observed size values:
 
-```{r fig-size}
+```{r fig1-size}
 ggplot(subset(data, dead == 0 & session == 1) %>%
   mutate(population = fct_recode(population,
     `shaded habitat` = "shaded",
     `open habitat` = "sun_exposed"
   ))) +
-  geom_jitter(aes(band_number, shell_diameter), height = 0, col = "grey") +
-  stat_eye(data = preds_size, aes(band_number, .value, fill = band_number), .width = c(0.01, 0.95), slab_alpha = 0.7) +
+  geom_jitter(aes(band_number, shell_diameter), 
+              height = 0, col = "grey") +
+  stat_eye(data = preds_size, 
+           aes(band_number, .value, fill = band_number), 
+           .width = c(0.01, 0.95), 
+           slab_alpha = 0.7) +
   scale_y_continuous("Shell diameter (mm)") +
   scale_x_discrete("Shell phenotype (band number)", labels = c("0 bands", "3 bands", "5 bands")) +
   scale_fill_manual(values = c("#fe9929", "#d95f0e", "#993404")) +
@@ -602,7 +536,10 @@ ggplot(subset(data, dead == 0 & session == 1) %>%
   theme(legend.position = "none")
 ```
 
-## oon parasite stuff
+## Figure 3 - parasite info
+
+(no Figure 2 from code; it is made of photographs)
+
 
 
 ```{r}
@@ -672,6 +609,7 @@ p_encaps / p_nema / p_trema &
 
 absence of effect of trematodes may be due to rarity in overall population (what happens in more infected pops, see refs)
 
+## Figure 4 - behaviour info
 
 ```{r}
 preds_mvt <- data %>%
@@ -740,6 +678,83 @@ p_mvt / p_food &
   plot_annotation(tag_levels = "A")
 ```
 
+
+## Table 1 - multivariate model summary
+
+```{r}
+summary_mod <- mod %>%
+  posterior_samples() %>%
+  select(starts_with(c("Intercept", "b_", "sd_", "cor_fullID", "sigma"))) %>%
+  pivot_longer(everything()) %>%
+  group_by(name) %>%
+  mean_hdi()
+
+summary_mod %>%
+  print(n = Inf)
+
+
+table1 <- summary_mod %>%
+  mutate(value = paste(round(value, 2), " [", round(.lower, 2), "; ", round(.upper, 2), "]", sep = "")) %>%
+  filter(str_detect(name, "cor_fullID") == FALSE) %>%
+  mutate(trait = case_when(
+    str_detect(name, "Nematode") ~ "Nematode abundance",
+    str_detect(name, "Trematode") ~ "Trematode abundance",
+    str_detect(name, "food") ~ "Food intake",
+    str_detect(name, "scalemvt") ~ "Movement",
+    TRUE ~ "ERROR"
+  )) %>%
+  mutate(coefficient = case_when(
+    str_detect(name, "sigma") ~ "Residual SD",
+    str_detect(name, "sd_series") ~ "Test group SD",
+    str_detect(name, "sd_fullID") ~ "Individual-level SD",
+    str_detect(name, "size") ~ "Shell size (standardised)",
+    str_detect(name, "5B:populationshaded") ~ "Population = \"shaded\"~[5 bands]~",
+    str_detect(name, "3B:populationshaded") ~ "Population = \"shaded\"~[3 bands]~",
+    str_detect(name, "0B:populationshaded") ~ "Population = \"shaded\"~[0 bands]~",
+    str_detect(name, "5B$") ~ "Intercept~[5 bands]~",
+    str_detect(name, "3B$") ~ "Intercept~[3 bands]~",
+    str_detect(name, "0B$") ~ "Intercept~[0 bands]~",
+  )) %>%
+  select(coefficient, trait, value) %>%
+  pivot_wider(names_from = "trait", values_from = "value") %>%
+  select(coefficient, `Nematode abundance`, `Trematode abundance`, `Movement`, `Food intake`) %>%
+  unnest(cols = c())
+
+table1[c(1, 2, 3, 5, 6, 7, 4, 9, 8, 10), ] %>% # just some reordering
+  knitr::kable()
+```
+
+
+## Table 2 - multivariate model correlation table
+
+```{r}
+table2 <- summary_mod %>%
+  mutate(value = paste(round(value, 2), " [", round(.lower, 2), "; ", round(.upper, 2), "]", sep = "")) %>%
+  filter(str_detect(name, "cor_fullID") == TRUE) %>%
+  mutate(
+    response1 = case_when(
+      str_detect(name, "cor_fullID__Nematode") ~ "Nematode abundance",
+      str_detect(name, "cor_fullID__scalefood") ~ "Food intake",
+      str_detect(name, "cor_fullID__Trematode") ~ "Trematode abundance",
+      str_detect(name, "cor_fullID__scalemvt") ~ "Movement"
+    ),
+    response2 = case_when(
+      str_detect(name, "Nematodeliveall_Intercept$") ~ "Nematode abundance",
+      str_detect(name, "scalefood_Intercept$") ~ "Food intake",
+      str_detect(name, "Trematodekidney_Intercept$") ~ "Trematode abundance",
+      str_detect(name, "scalemvt_Intercept$") ~ "Movement"
+    )
+  ) %>%
+  select(response1, response2, value)
+
+table2
+
+## here we're going to sort manually in manuscript, so we can match the order in table 1
+
+# mcmc_rank_overlay(mod, pars = summary_mod$name)
+```
+
+
 ```{r}
 preds_nematode %>%
   mutate(group = paste(band_number, ", ", population, sep = "")) %>%
@@ -762,70 +777,7 @@ preds_food %>%
   mean_hdi()
 ```
 
-
-no need of complex stuff for repeatabilities, the two repeatable traits are gaussian here
-
-```{r}
-## expressed on scale components but OK because we plot % of variance
-varcomps_mvt <- tibble(
-  VF = rowVars(posterior_linpred(mod, re_formula = NA, resp = "scalemvt")),
-  VI = VarCorr(mod, summary = FALSE)$fullID$sd[, "scalemvt_Intercept"]^2,
-  Vseries = VarCorr(mod, summary = FALSE)$series$sd[, "scalemvt_Intercept"]^2,
-  VR = (posterior_samples(mod, pars = "sigma_scalemvt")[, 1])^2
-) %>%
-  mutate(
-    trait = "mvt",
-    VP = VF + VI + Vseries + VR
-  )
-
-varcomps_food <- tibble(
-  VF = rowVars(posterior_linpred(mod, re_formula = NA, resp = "scalefood")),
-  VI = VarCorr(mod, summary = FALSE)$fullID$sd[, "scalefood_Intercept"]^2,
-  Vseries = VarCorr(mod, summary = FALSE)$series$sd[, "scalefood_Intercept"]^2,
-  VR = (posterior_samples(mod, pars = "sigma_scalefood")[, 1])^2
-) %>%
-  mutate(
-    trait = "food",
-    VP = VF + VI + Vseries + VR
-  )
-
-rbind(varcomps_food, varcomps_mvt) %>%
-  group_by(trait) %>%
-  pivot_longer(cols = c(VF, VI, Vseries, VR), names_to = "varcomp", values_to = "variance") %>%
-  ungroup() %>%
-  mutate(varcomp = fct_recode(varcomp,
-    `fixed effects` = "VF",
-    individual = "VI",
-    `test group` = "Vseries",
-    residuals = "VR"
-  )) %>%
-  mutate(varcomp = fct_relevel(varcomp, rev)) %>%
-  mutate(varcomp = fct_relevel(varcomp, "test group", after = 1)) %>%
-  mutate(trait = fct_recode(trait,
-    `Food intake` = "food",
-    `Movement speed` = "mvt"
-  )) %>%
-  ggplot() +
-  stat_halfeye(aes(y = varcomp, x = 100 * variance / VP),
-    point_interval = mean_hdi, .width = c(0.001, 0.95),
-    normalize = "xy"
-  ) +
-  facet_wrap(~trait) +
-  scale_x_continuous(
-    name = "Variance explained (%, observed scale)", lim = c(0, 100),
-    breaks = seq(from = 0, to = 100, by = 10)
-  ) +
-  scale_y_discrete(name = "Variance component") +
-  cowplot::theme_half_open(11) +
-  cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
-```
-
-
-
-
- + individual level correlation grid to do
-
-# Supplementary plots
+## Some other useful outputs
 
 ```{r}
 # a plot to look at the size of the dead snail relative to the others
@@ -838,80 +790,3 @@ ggplot(data_parasite) +
   facet_wrap(~population)
 ```
 
-
-
-
-```{r}
-data_parasite %>%
-  group_by(population, band_number, dead) %>%
-  summarise(
-    preva_trema = mean(Trematode_kidney > 0),
-    preva_nema = mean(Nematode_live_all > 0),
-    preva_nencaps = mean(Nematode_encaps_all > 0),
-    preva_acari = mean(Acari_live_all > 0),
-    preva_aaencaps = mean(Acari_encaps > 0),
-    abun_trema = mean(Trematode_kidney),
-    abun_nema = mean(Nematode_live_all),
-    abun_nencaps = mean(Nematode_encaps_all),
-    abun_acari = mean(Acari_live_all),
-    abun_aencaps = mean(Acari_encaps)
-  )
-
-
-data_parasite %>%
-  group_by(population, band_number, dead) %>%
-  filter(Trematode_kidney > 0) %>%
-  summarise(
-    N = length(Trematode_kidney),
-    min_inci = min(Trematode_kidney),
-    median_inci = median(Trematode_kidney),
-    mean_inci = mean(Trematode_kidney),
-    max_inci = max(Trematode_kidney)
-  )
-
-
-data_parasite %>%
-  group_by(population, band_number, dead) %>%
-  filter(Nematode_live_all > 0) %>%
-  summarise(
-    N = length(Nematode_live_all),
-    min_inci = min(Nematode_live_all),
-    median_inci = median(Nematode_live_all),
-    mean_inci = mean(Nematode_live_all),
-    max_inci = max(Nematode_live_all)
-  )
-
-
-data_parasite %>%
-  group_by(population, band_number, dead) %>%
-  filter(Nematode_encaps_all > 0) %>%
-  summarise(
-    N = length(Nematode_encaps_all),
-    min_inci = min(Nematode_encaps_all),
-    median_inci = median(Nematode_encaps_all),
-    mean_inci = mean(Nematode_encaps_all),
-    max_inci = max(Nematode_encaps_all)
-  )
-
-data_parasite %>%
-  group_by(population, band_number, dead) %>%
-  filter(Acari_live_all > 0) %>%
-  summarise(
-    N = length(Acari_live_all),
-    min_inci = min(Acari_live_all),
-    median_inci = median(Acari_live_all),
-    mean_inci = mean(Acari_live_all),
-    max_inci = max(Acari_live_all)
-  )
-
-data_parasite %>%
-  group_by(population, band_number, dead) %>%
-  filter(Acari_encaps > 0) %>%
-  summarise(
-    N = length(Acari_encaps),
-    min_inci = min(Acari_encaps),
-    median_inci = median(Acari_encaps),
-    mean_inci = mean(Acari_encaps),
-    max_inci = max(Acari_encaps)
-  )
-```
