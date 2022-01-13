@@ -541,27 +541,39 @@ ggplot(subset(data, dead == 0 & session == 1) %>%
 (no Figure 2 from code; it is made of photographs)
 
 
+That figure is made of three parts: one for the encapsulated nematodes (no stats, no counts, we just want to have an idea about presence), one for the live nematodes, one for the live trematodes.
 
-```{r}
-p_encaps <- ggplot(data = data_parasite %>%
+### Encapsulated nematodes
+
+That subfigure is just the presence/absence of encapsulated nematodes in shells. We didn't do stats, and we don"t use counts, for the same reasons: contrary to live parasites that can be cleared, encapsulated parasites accumulate with age. So unless we know snails' age, which we don't, we can't do meaningful analyses. But having a broad qualitative idea of how many adults have had an encounter is useful:
+
+```{r fig-encaps}
+
+p_encaps <- data_parasite %>%
   filter(dead == 0) %>%
   mutate(population = fct_recode(population,
     `shaded habitat` = "shaded",
     `open habitat` = "sun_exposed"
   )) %>%
   group_by(population, band_number) %>%
-  summarise(percent_encaps = mean(Nematode_encaps_all > 0) * 100) %>% ungroup()) +
+  summarise(percent_encaps = mean(Nematode_encaps_all > 0) * 100) %>% 
+  ungroup() %>%
+  ggplot() +
   geom_col(aes(band_number, percent_encaps), fill = "white", col = "grey") +
   scale_y_continuous("% with encapsulated nematodes") +
   scale_x_discrete("", labels = c("0 bands", "3 bands", "5 bands")) +
   facet_wrap(~population) +
   coord_cartesian(ylim = c(0, 100))
+```
 
+Then we do the live nematode subfigure. Like with size, we create predictions first, then plot them alongside observations (note that there is no predictions for the shaded population, since there were no nematodes)
+
+```{r fig-nematodes}
 preds_nematode <- data %>%
   select(band_number) %>%
   distinct() %>%
   mutate(scale_size = 0, session = 1, population = "sun_exposed") %>%
-  add_fitted_draws(mod, re_formula = NA, resp = "Nematodeliveall") %>% ## but re_formula NA not right for poisson ORLE, right? at least not for mean
+  add_epred_draws(mod_multi, re_formula = NA, resp = "Nematodeliveall") %>%
   ungroup() %>%
   mutate(population = fct_recode(population, `open habitat` = "sun_exposed"))
 
@@ -570,18 +582,26 @@ p_nema <- ggplot(subset(data, dead == 0 & session == 1) %>%
     `shaded habitat` = "shaded",
     `open habitat` = "sun_exposed"
   ))) +
-  geom_jitter(aes(band_number, Nematode_live_all), height = 0, col = "grey") +
-  stat_eye(data = preds_nematode, aes(band_number, .value, fill = band_number), .width = c(0.01, 0.95), slab_alpha = 0.7, point_interval = mean_hdi) +
+  geom_jitter(aes(band_number, Nematode_live_all), 
+              height = 0, col = "grey") +
+  stat_eye(data = preds_nematode, 
+           aes(band_number, .epred, fill = band_number), 
+           .width = c(0.01, 0.95), slab_alpha = 0.7, 
+           point_interval = mean_hdi) +
   scale_y_continuous("Nematodes") +
   scale_x_discrete("", labels = c("0 bands", "3 bands", "5 bands")) +
   scale_fill_manual(values = c("#fe9929", "#d95f0e", "#993404")) +
   facet_wrap(~population)
+```
 
+and we do the same for trematodes (which were found in both populations):
+
+```{r fig-trematodes}
 preds_trematode <- data %>%
   select(band_number, population) %>%
   distinct() %>%
   mutate(scale_size = 0, session = 1) %>%
-  add_fitted_draws(mod, re_formula = NA, resp = "Trematodekidney") %>% ## but re_formula NA not right for poisson ORLE, right? at least not for mean
+  add_epred_draws(mod_multi, re_formula = NA, resp = "Trematodekidney") %>%
   ungroup() %>%
   mutate(population = fct_recode(population,
     `shaded habitat` = "shaded",
@@ -593,13 +613,22 @@ p_trema <- ggplot(subset(data, dead == 0 & session == 1) %>%
     `shaded habitat` = "shaded",
     `open habitat` = "sun_exposed"
   ))) +
-  geom_jitter(aes(band_number, Trematode_kidney), height = 0, col = "grey") +
-  stat_eye(data = preds_trematode, aes(band_number, .value, fill = band_number), .width = c(0.01, 0.95), slab_alpha = 0.7, point_interval = mean_hdi) +
-  scale_y_continuous("Trematodes in kidney") +
-  scale_x_discrete("Shell phenotype (band number)", labels = c("0 bands", "3 bands", "5 bands")) +
+  geom_jitter(aes(band_number, Trematode_kidney), 
+              height = 0, col = "grey") +
+  stat_eye(data = preds_trematode, 
+           aes(band_number, .epred, fill = band_number), 
+           .width = c(0.01, 0.95), slab_alpha = 0.7, 
+           point_interval = mean_hdi) +
+  scale_y_continuous("Trematodes") +
+  scale_x_discrete("Shell phenotype (band number)", 
+                   labels = c("0 bands", "3 bands", "5 bands")) +
   scale_fill_manual(values = c("#fe9929", "#d95f0e", "#993404")) +
   facet_wrap(~population)
+```
 
+We can then put the pieces of the puzzle together:
+
+```{r fig2}
 p_encaps / p_nema / p_trema &
   cowplot::theme_half_open(11) &
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95") &
@@ -607,7 +636,21 @@ p_encaps / p_nema / p_trema &
   plot_annotation(tag_levels = "A")
 ```
 
-absence of effect of trematodes may be due to rarity in overall population (what happens in more infected pops, see refs)
+We can then do comparisons among groups (since they're counts, let's do multiplicative comparisons, ratios between counts)
+
+```{r parasite-comparisons}
+preds_nematode %>%
+  mutate(group = paste(band_number, ", ", population, sep = "")) %>%
+  compare_levels(.epred, by = group, fun = `/`) %>%
+  mean_hdi()
+
+preds_trematode %>%
+  mutate(group = paste(band_number, ", ", population, sep = "")) %>%
+  compare_levels(.epred, by = group, fun = `/`) %>%
+  mean_hdi()
+
+```
+
 
 ## Figure 4 - behaviour info
 
@@ -756,15 +799,6 @@ table2
 
 
 ```{r}
-preds_nematode %>%
-  mutate(group = paste(band_number, ", ", population, sep = "")) %>%
-  compare_levels(.value, by = group, fun = `/`) %>%
-  mean_hdi()
-
-preds_trematode %>%
-  mutate(group = paste(band_number, ", ", population, sep = "")) %>%
-  compare_levels(.value, by = group, fun = `/`) %>%
-  mean_hdi()
 
 preds_mvt %>%
   mutate(group = paste(band_number, ", ", population, sep = "")) %>%
