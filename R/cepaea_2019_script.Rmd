@@ -211,8 +211,8 @@ table(
 ## 2B - univariate model for body size
 
 ```{r}
-# ideally would include size as a correlated response in the multivar, not a covariate, but splitting indvar bw sigma and SD is WAY TOO HARD
-mod_size <- brm(bf(scale_size ~ 0 + band_number + band_number:population),
+mod_size <- brm(
+  bf(scale_size ~ 0 + band_number + band_number:population), ## we use that notation throughout to have an intercept and a population effect per morph, rather than having morph contrasts
   data = subset(data, session == 1),
   # size variable is present twice in dataset (to go with behaviour)
   # subset argument ensures it is counted only once and we don't artificially double the dataset
@@ -225,6 +225,7 @@ mod_size <- brm(bf(scale_size ~ 0 + band_number + band_number:population),
 )
 ```
 
+Let's do some basic checks (list below not exhaustive, see vignettes of the `tidybayes` package)
 
 ```{r}
 pp_check(mod_size)
@@ -232,9 +233,14 @@ pp_check(mod_size, "stat_2d")
 plot(mod_size)
 mcmc_rank_hist(mod_size)
 mcmc_rank_overlay(mod_size)
+summary(mod_size)
+plot(conditional_effects(mod_size))
 ```
 
-## 2B - the multivariate parasite-behaviour model
+Everything seems in order, let's move to the big parasite-behaviour model
+
+
+## 2C - the multivariate parasite-behaviour model
 
 
 ### test the validity of model formulas for behaviours
