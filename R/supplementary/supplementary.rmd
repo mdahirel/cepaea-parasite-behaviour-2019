@@ -2,7 +2,12 @@
 title: 'Supplementary Material for "Morph-dependent effect of nematode infection on host movement in the land snail *Cepaea nemoralis* (Mollusca, Gastropoda)"'
 author: "Maxime Dahirel, Marine Proux, Armelle Ansart, Claudia Gérard"
 date:
+header-includes:
+  - \usepackage{amsmath}
+  - \usepackage{caption}
+  - \DeclareCaptionLabelFormat{special}{#1#2}
 output: pdf_document
+bibliography: references.bib
 editor_options:
   chunk_output_type: console
 ---
@@ -13,6 +18,9 @@ knitr::opts_chunk$set(
   message = FALSE, eval = TRUE, dev = "cairo_pdf"
 )
 ```
+
+\captionsetup[table]{name=Table S,labelfont=bf, labelsep= period,labelformat=special}
+\captionsetup[figure]{name=Figure S,labelfont=bf, labelsep= period,labelformat=special}
 
 ```{r packages-loading}
 library(matrixStats) # CRAN v0.61.0
@@ -33,15 +41,96 @@ options(mc.cores = 4) ## to reduce/increase depending on cores available on your
 ```
 
 
-# S1 - detailed math description of both models
+# S1 - Detailed model descriptions
 
-## Size model
+In both models described below, we used weakly informative priors inspired by @mcelreathStatisticalRethinkingBayesian2020. We used $\mathrm{Normal}(0,1)$ priors for the fixed effects $\beta$, and $\mathrm{Half-Normal}(0,1)$ priors for all standard deviations (random effect standard deviations $\sigma_{\alpha}$ and $\sigma_{\gamma}$ as well as residual standard deviations $\sigma_{r}$). We used a $\mathrm{LKJ}(2)$ prior for the individual-level correlation matrix in the multivariate model.
 
+## Body size (shell diameter) model
+
+After centering and standardizing to unit 1SD, shell diameters $D_{o,m,i}$ with $o$ the population of origin (coded as a binary variable with 0 for the sun-exposed population and 1 for the shaded population), $m$ the shell morph and $i$ the individual, can be described by the following linear model:
+
+$$
+D_{o,m,i} \sim \mathrm{Normal}(\mu_{o,m},\sigma_{r[D]}), \\
+$$
+$$
+\mu_{o,m} = \beta_{0[D,m]} + \beta_{1[D,m]} \times o. \\
+$$
+In this model, the intercepts $\beta_{0}$ are the morph-specific intercepts/mean sizes in the sun-exposed habitat, $\beta_{1}$ the morph-specific effect of the shaded habitat, and $\sigma_{r[D]}$ the residual variation.
 
 ## Multivariate model of parasites abundance and snail behaviours
 
+The multivariate model used to analyse parasite abundances, movement behaviour, food intake and their individual-level correlations can be written as follows.
 
-# S2 - descriptive stats about parasites 
+Let $N_{o,m,s,i}$ and $T_{o,m,s,i}$ be the numbers of live nematodes and *Brachylaima* trematodes found in snail $i$ which was tested during session $s$, and $F_{o,m,s,i,t}$ and $M_{o,m,s,i,t}$ be the quantity of food ingested by snail $i$ (centered and scale to 1SD), and its movement activity during trial $t$ (also centered and scaled to 1SD), respectively. We then have:
+
+$$
+\begin{cases}
+N_{o,m,s,i} \sim \mathrm{Poisson}(\lambda_{m,s,i[N]}), & \text{if}\ o = 0 \\
+      N_{o,m,s,i} = 0, & \text{otherwise},
+\end{cases}
+$$
+$$
+T_{o,m,s,i} \sim \mathrm{Poisson}(\lambda_{o,m,s,i[T]}),
+$$
+$$
+F_{o,m,s,i,t} \sim \mathrm{Normal}(\mu_{o,m,s,i[F]},\sigma_{r[F]}),
+$$
+$$
+M_{o,m,s,i,t} \sim \mathrm{Normal}(\mu_{o,m,s,i[M]},\sigma_{r[M]}),
+$$
+$$
+\lambda_{m,s,i[N]} = \beta_{0[N,m]} + \beta_{2[N]} \times D_{i} + \alpha_{s[N]} + \gamma_{i[N]},\\
+$$
+$$
+\lambda_{o,m,s,i[T]} = \beta_{0[T,m]} + \beta_{1[T,m]} \times o + \beta_{2[T]} \times D_{i} + \alpha_{s[T]} + \gamma_{i[T]},\\
+$$
+$$
+\mu_{o,m,s,i[F]} = \beta_{0[F,m]} + \beta_{1[F,m]} \times o + \beta_{2[F]} \times D_{i} + \alpha_{s[F]} + \gamma_{i[F]},\\
+$$
+$$
+\mu_{o,m,s,i[M]} = \beta_{0[M,m]} + \beta_{1[M,m]} \times o + \beta_{2[M]} \times D_{i} + \alpha_{s[M]} + \gamma_{i[M]},\\
+$$
+where the $\alpha$ refer to the experimental session random effects and $\gamma$ the individual random effects. These random effects are distributed as follows:
+$$
+\alpha_{s[N]} \sim \mathrm{Normal}(0,\sigma_{\alpha[N]}),
+$$
+$$
+\alpha_{s[T]} \sim \mathrm{Normal}(0,\sigma_{\alpha[T]}),
+$$
+$$
+\alpha_{s[F]} \sim \mathrm{Normal}(0,\sigma_{\alpha[F]}),
+$$
+$$
+\alpha_{s[M]} \sim \mathrm{Normal}(0,\sigma_{\alpha[M]}),
+$$
+$$
+\begin{bmatrix} \gamma_{[N]i} \\ \gamma_{[T]i} \\ \gamma_{[F]i} \\ \gamma_{[M]i} \end{bmatrix} 
+\sim 
+\textrm{MVNormal}
+\begin{pmatrix}
+\begin{bmatrix} 0 \\ 0 \\ 0 \\ 0  \end{bmatrix},
+\boldsymbol{\Omega}
+\end{pmatrix},
+$$
+, where $\boldsymbol{\Omega}$ is the individual-level covariance matrix, which can be decomposed into its constituent standard deviations and correlation matrix $\boldsymbol{R}$ in this way:
+$$
+\boldsymbol{\Omega} = 
+\begin{bmatrix}
+\sigma_{\gamma[N]} & 0 & 0 & 0\\
+0 & \sigma_{\gamma[T]} & 0 & 0\\
+0 & 0 & \sigma_{\gamma[F} & 0\\
+0 & 0 & 0 & \sigma_{\gamma[M]}
+\end{bmatrix}
+\boldsymbol{R}
+\begin{bmatrix}
+\sigma_{\gamma[N]} & 0 & 0 & 0\\
+0 & \sigma_{\gamma[T]} & 0 & 0\\
+0 & 0 & \sigma_{\gamma[F} & 0\\
+0 & 0 & 0 & \sigma_{\gamma[M]}
+\end{bmatrix}.
+$$
+
+# S2 - Summary statistics on parasite infections and encapsulations
 
 ```{r data-load}
 raw_parasite <- read_csv(here("data", "cepaea_2019_parasite.csv"))
@@ -78,13 +167,13 @@ data <- data %>%
   )
 ```
 
-We present here information about each parasite prevalence (% of potential hosts infected) and infection intensity
-(number of parasites per *actually infected host*). For trematode and nematode data, the provided 95% intervals are the Highest Density intervals based on binomial GLMs (prevalence) and negative binomial GLMs (intensity) with morph, population and morph *population fixed effects. The intensity models are fitted on intensity - 1, to account for the zero exclusion. Priors are as in S1, with the addition of a halfnormal(0-1) prior on the inverse of the negative binomial shape parameter, per REF. Note that we do not provide 95% intervals for Acari, given rarity of infection. and also not for encapsulated parasites, for reasons presented at the end of the main text methods.
-The individual that died is excluded from all tables below and harboured `r subset(data_parasite$Nematode_live_all,data_parasite$dead==1)[1]` live nematodes, `r subset(data_parasite$Trematode_kidney,data_parasite$dead==1)[1]` live trematodes, `r subset(data_parasite$Acari_live_all,data_parasite$dead==1)[1]` live mites, had encapsulated `r subset(data_parasite$Nematode_encaps_all,data_parasite$dead==1)[1]` nematodes and `r subset(data_parasite$Acari_encaps,data_parasite$dead==1)[1]` mites.
+In the following tables, we present descriptive information about the prevalence of each parasite (proportion of potential hosts infected) and the infection intensity (number of parasites per *actually infected* host).  
 
+For trematode and nematode data, the provided 95% intervals are Highest Density intervals based on Bernoulli (prevalence) and negative binomial (intensity) GLMs including with shell morph, population and their interaction as fixed effects. The intensity models are fitted on (number of parasites - 1), to account for the zero truncation. Priors are as in **S1**, with the addition of a $\mathrm{Half-Normal}(0,1)$ prior on the inverse of the negative binomial shape parameter, inspired by the authors of the Stan wiki: https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations.  
 
+Note that we do not provide 95% intervals for mites data, given how rare infections are in our dataset. We also do not provide either intensity information or 95% intervals for encapsulated parasites, for reasons outlined at the end of the main text **Methods**. That is, contrary to *current* infections, the probability of having at least one parasite trapped and the total number of parasites trapped in the shell both increase cumulatively with age. Therefore, in the absence of information about age, there is no useful quantitative inference that can be made from these data.  
 
-(morph and population specific prevalence, as well as min/mean/median/max CI abundance and/or intensities)
+The tables below all exclude the individual that died during the experiment. That snail harboured `r subset(data_parasite$Nematode_live_all,data_parasite$dead==1)[1]` live nematodes, `r subset(data_parasite$Trematode_kidney,data_parasite$dead==1)[1]` live trematodes, `r subset(data_parasite$Acari_live_all,data_parasite$dead==1)[1]` live mites, had encapsulated `r subset(data_parasite$Nematode_encaps_all,data_parasite$dead==1)[1]` nematodes and `r subset(data_parasite$Acari_encaps,data_parasite$dead==1)[1]` mites.
 
 ```{r}
 if (file.exists(here("R_output", "suppl_model_nema_prevalence.RDS")))
@@ -104,7 +193,6 @@ mod_nemaprev <- brm(
   saveRDS(mod_nemaprev, file = here("R_output", "suppl_model_nema_prevalence.RDS"))
   }
 ```
-
 
 ```{r}
 if (file.exists(here("R_output", "suppl_model_nema_intensity.RDS")))
@@ -128,7 +216,6 @@ saveRDS(mod_nemaintens, file = here("R_output", "suppl_model_nema_intensity.RDS"
   }
 ```
 
-
 ```{r}
 if (file.exists(here("R_output", "suppl_model_trema_prevalence.RDS")))
   {
@@ -147,7 +234,6 @@ mod_tremaprev <- brm(
   saveRDS(mod_tremaprev, file = here("R_output", "suppl_model_trema_prevalence.RDS"))
   }
 ```
-
 
 ```{r}
 if (file.exists(here("R_output", "suppl_model_trema_intensity.RDS")))
@@ -237,9 +323,6 @@ table_nema=left_join(nema_obs,nema_pred_prev) %>%
 
 ```
 
-
-
-
 ```{r}
 trema_obs <- data_parasite %>%
   filter(dead==0) %>% 
@@ -298,7 +381,6 @@ table_trema = left_join(trema_obs,trema_pred_prev) %>%
 
 ```
 
-
 ```{r}
 Acari_obs <- data_parasite %>%
   filter(dead==0) %>% 
@@ -324,7 +406,6 @@ Acari_obs <- data_parasite %>%
                              `5 bands` = "5B"))
 ```
 
-
 ```{r}
 encaps_obs <- data_parasite %>%
   filter(dead==0) %>% 
@@ -343,37 +424,17 @@ encaps_obs <- data_parasite %>%
                              `5 bands` = "5B"))
 ```
 
-
-
-table x nematode
 ```{r}
 knitr::kable(table_nema %>% 
                arrange(population,band_number) %>% 
                select(`shell morph` = band_number,n,
-                      prevalence,`95% interval`=prevalence_interval), booktabs = T) %>%
+                      prevalence,`95% interval`=prevalence_interval), booktabs = T,
+             caption="Morph- and population-dependent summary information about nematode prevalence") %>%
   kableExtra::pack_rows("Open habitat", 1,3) %>%
-  kableExtra::pack_rows("Shaded habitat", 4,6)
+  kableExtra::pack_rows("Shaded habitat", 4,6)%>%
+  kableExtra::kable_styling(latex_options = "HOLD_position")
 ```
 
-table x trematode
-```{r}
-knitr::kable(table_trema %>% 
-               arrange(population,band_number) %>% 
-               select(`shell morph`=band_number,n,
-                      prevalence,`95% interval`=prevalence_interval), booktabs = T)%>%
-  kableExtra::pack_rows("Open habitat", 1,3) %>%
-  kableExtra::pack_rows("Shaded habitat", 4,6)
-```
-
-Table x acari
-```{r}
-knitr::kable(Acari_obs %>% 
-               arrange(population,band_number) %>%  select(`shell morph`=band_number,n,prevalence), booktabs = T)%>%
-  kableExtra::pack_rows("Open habitat", 1,3) %>%
-  kableExtra::pack_rows("Shaded habitat", 4,6)
-```
-
-table x nematode
 ```{r}
 knitr::kable(table_nema %>% 
                arrange(population,band_number) %>% 
@@ -381,12 +442,24 @@ knitr::kable(table_nema %>%
                                    `n(infected)`=n_infected,
                                    `mean intensity`=mean_intensity, 
                                    `95% interval`=intensity_interval,
-                                   min = min_intensity, max = max_intensity), booktabs = T)%>%
+                                   min = min_intensity, max = max_intensity), booktabs = T,
+             caption="Morph- and population-dependent summary information about nematode intensity of infection")%>%
   kableExtra::pack_rows("Open habitat", 1,3) %>%
-  kableExtra::pack_rows("Shaded habitat", 4,6)
+  kableExtra::pack_rows("Shaded habitat", 4,6)%>%
+  kableExtra::kable_styling(latex_options = "HOLD_position")
 ```
 
-table x trematode
+```{r}
+knitr::kable(table_trema %>% 
+               arrange(population,band_number) %>% 
+               select(`shell morph`=band_number,n,
+                      prevalence,`95% interval`=prevalence_interval), booktabs = T,
+             caption="Morph- and population-dependent summary information about trematode prevalence")%>%
+  kableExtra::pack_rows("Open habitat", 1,3) %>%
+  kableExtra::pack_rows("Shaded habitat", 4,6)%>%
+  kableExtra::kable_styling(latex_options = "HOLD_position")
+```
+
 ```{r}
 knitr::kable(table_trema %>% 
                arrange(population,band_number) %>% 
@@ -394,35 +467,49 @@ knitr::kable(table_trema %>%
                                    `n(infected)`=n_infected,
                                    `mean intensity`=mean_intensity, 
                                    `95% interval`=intensity_interval,
-                                   min = min_intensity, max = max_intensity), booktabs = T)%>%
+                                   min = min_intensity, max = max_intensity), booktabs = T,
+             caption="Morph- and population-dependent summary information about trematode intensity of infection")%>%
   kableExtra::pack_rows("Open habitat", 1,3) %>%
-  kableExtra::pack_rows("Shaded habitat", 4,6)
+  kableExtra::pack_rows("Shaded habitat", 4,6)%>%
+  kableExtra::kable_styling(latex_options = "HOLD_position")
 ```
 
-Table x acari
+```{r}
+knitr::kable(Acari_obs %>% 
+               arrange(population,band_number) %>%  select(`shell morph`=band_number,n,prevalence), booktabs = T,
+             caption="Morph- and population-dependent summary information about mite prevalence")%>%
+  kableExtra::pack_rows("Open habitat", 1,3) %>%
+  kableExtra::pack_rows("Shaded habitat", 4,6)%>%
+  kableExtra::kable_styling(latex_options = "HOLD_position")
+```
+
 ```{r}
 knitr::kable(Acari_obs %>% 
                arrange(population,band_number) %>% 
                select(`shell morph`=band_number,
                                    `n(infected)`=n_infected,
                                    `mean intensity`=mean_intensity, 
-                                   min = min_intensity, max = max_intensity), booktabs = T)%>%
+                                   min = min_intensity, max = max_intensity), booktabs = T,
+             caption="Morph- and population-dependent summary information about mite intensity of infection")%>%
   kableExtra::pack_rows("Open habitat", 1,3) %>%
-  kableExtra::pack_rows("Shaded habitat", 4,6)
+  kableExtra::pack_rows("Shaded habitat", 4,6)%>%
+  kableExtra::kable_styling(latex_options = "HOLD_position")
 ```
 
-Table x encaps
 ```{r}
 knitr::kable(encaps_obs %>% 
                arrange(population,band_number) %>%  select(`shell morph`=band_number,
                                                            n,`proportion with encapsulated nematodes`=p_encaps_nema,
-                                                           `proportion with encapsulated mites`=p_encaps_mite), booktabs = T)%>%
+                                                           `proportion with encapsulated mites`=p_encaps_mite), booktabs = T,
+             caption="Morph- and population-dependent summary information about parasite encapsulation in shells")%>%
   kableExtra::pack_rows("Open habitat", 1,3) %>%
-  kableExtra::pack_rows("Shaded habitat", 4,6)
+  kableExtra::pack_rows("Shaded habitat", 4,6)%>%
+  kableExtra::kable_styling(latex_options = "HOLD_position")
 ```
 
+\newpage
 
-# S3 - pairwise posterior comparisons for each trait
+# S3 - Pairwise posterior comparisons (multivariate model)
 
 ```{r loading-model}
 mod_multi <- readRDS(here("R_output","model_multi.RDS"))
@@ -492,8 +579,7 @@ preds_nematode <- data %>%
 
 ```
 
-```{r}
-
+```{r fig.cap="Posterior pairwise differences in nematode abundance between snail morphs (on the latent log scale). Reminder: the model for nematode abundance only includes data from the sun-exposed population, since no live nematodes were found in the shaded population.", fig.height=3}
 preds_nematode %>%
   mutate(group = paste(band_number, ", ", population, sep = "")) %>%
   compare_levels(.linpred, by = group) %>%
@@ -504,7 +590,10 @@ preds_nematode %>%
   scale_x_continuous("posterior predicted difference (latent log scale)")+
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+```
 
+
+```{r fig.cap="Posterior pairwise differences in **Brachylaima** trematode abundance between snail morph × population combinations (on the latent log scale).", fig.height=6}
 preds_trematode %>%
   mutate(group = paste(band_number, ", ", population, sep = "")) %>%
   compare_levels(.linpred, by = group) %>%
@@ -515,7 +604,10 @@ preds_trematode %>%
   scale_x_continuous("posterior predicted difference (latent log scale)")+
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+```
 
+
+```{r fig.cap="Posterior pairwise differences in movement behaviour between snail morph × population combinations. The movement variable is the inverse of the latency to move away (so higher values mean more mobile individuals), and the variable was scaled so differences are in units 1SD.", fig.height=6}
 preds_mvt %>%
   mutate(group = paste(band_number, ", ", population, sep = "")) %>%
   compare_levels(.epred, by = group) %>%
@@ -526,7 +618,9 @@ preds_mvt %>%
   scale_x_continuous("posterior predicted difference")+
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
+```
 
+```{r fig.cap="Posterior pairwise differences in food intake between snail morph × population combinations.", fig.height=6}
 preds_food %>%
   mutate(group = paste(band_number, ", ", population, sep = "")) %>%
   compare_levels(.epred, by = group) %>%
@@ -539,11 +633,13 @@ preds_food %>%
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
 ```
 
-# S4 -  Posterior proportion of total variance associated with fixed effects vs. random effects in movement and food intake
+\newpage
 
-Both movement behaviour and food intake were observed twice, which allows us to partition variance into among-individual and within-individual components. We show that although in both cases, within-individual/"residual" variation is the dominant component, there is a non-negligible among-individual variance component: both traits are repeatable (**Supporting Information Figure SX**).
+# S4 - Posterior proportion of total variance associated with fixed effects vs. random effects in movement and food intake
 
-```{r fig-varpart}
+Both movement behaviour and food intake were observed twice, which allows us to partition variance into among-individual and within-individual components. We show that although in both cases, within-individual/"residual" variation is the dominant component, there is a non-negligible among-individual variance component: both traits are repeatable (**Supporting Information Figure S5**).
+
+```{r prep-fig-varpart}
 ## the variables used to fit models are scaled
 ## but that's not a problem since we are plotting **relative** variance components here
 
@@ -593,8 +689,10 @@ varcomps <- rbind(varcomps_food, varcomps_mvt) %>%
     `Food intake` = "food",
     `Movement (1/latency to leave)` = "mvt"
   ))
+```
 
-## and then we plot
+
+```{r fig-varpart, fig.cap="Mean (points) and posteriors for the proportion of behavioural variance explained by the different variance components. See **Methods** and **Supporting Information S1** for a description of the model underlying these estimates.", fig.height= 3}
 
 ggplot(varcomps) +
   stat_halfeye(aes(y = varcomp, x = 100 * variance / VP),
@@ -610,7 +708,5 @@ ggplot(varcomps) +
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
 ```
-
-**Supporting Information Figure SX.** Mean (points) and posteriors for the proportion of variance explained by the different variance components. See **Methods** and **Supporting Information S1** for a description of the model underlying these estimates.
 
 # References
