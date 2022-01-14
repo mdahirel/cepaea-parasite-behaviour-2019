@@ -19,7 +19,7 @@ knitr::opts_chunk$set(echo = TRUE, eval = FALSE, message = FALSE)
 
 # A brief introduction
 
-This code is used for analyzing data collected during Marine Proux's internshio in 2019. This was a study of how different morphs of *Cepaea nemoralis* varied in their behaviour and in the parasites they naturally harbour, and whether there was a link between parasitism and behaviour (see more details in the manuscript). 180 snails were tested, minus one that died during the experiments (it is still in the dataset)
+This code is used to analyze data collected during Marine Proux's internship in 2019. This was a study of how different morphs of *Cepaea nemoralis* varied in their behaviour and in the parasites they naturally harbour, and whether there was a link between parasitism and behaviour (see more details in the manuscript). 180 snails were tested, minus one that died during the experiments (it is still in the source dataset because it is still useful in some ways, see below for how we handle that)
 
 # Part 1 : Preparation
 
@@ -126,7 +126,7 @@ data <- raw_behaviour %>%
   filter(dead == 0)
 ```
 
-In the new dataset, we then center and standardize the continuous variables. We do that in two steps. First, the easy ones, everything but movement:
+In the new dataset, we then center and standardize the continuous variables. We do that in two steps. First, the easy ones, so everything but movement:
 
 ```{r data-prep3}
 data <- data %>%
@@ -145,7 +145,7 @@ data <- data %>%
   )
 ```
 
-We then prep the movement variable, which is a bit more complex. We first need to create our actual latency of move way variable, by removing the time unactive `FPT1` from the total response times `FPT3` before using them. We need to do that properly in particular for the individuals that did not move at all (because a naive `FPT3 - FPT1` when both are 1200sec (the maximum) gives 0, which is the wrong answer. Finally, as the survival model on the untransformed latencies doesn't work well (see below), we'll also prepare a variable that is the inverse latency to analyse with a Gaussian model (so we'll center and scale it too). 
+We then prep the movement variable, which is a bit more complex. We first need to create our actual latency to move away variable, by removing the time unactive `FPT1` from the total response times `FPT3` before using them. We need to do that properly in particular for the individuals that did not move at all (because a naive `FPT3 - FPT1` when both are 1200sec (the maximum) gives 0, which is the wrong answer). Finally, as the survival model on the untransformed latencies doesn't work well (see below), we'll also prepare a variable that is the inverse latency to analyse with a Gaussian model (so we'll center and scale it too). 
 
 
 ```{r data-prep-mvt}
@@ -212,6 +212,13 @@ table(
 ## 2B - univariate model for body size
 
 ```{r model-size}
+if (file.exists(here("R_output", "model_size.RDS")))
+# this if-else statement is avoid re-fitting a model when knitting Rmd file if there is already one existing in R_output
+# to override, re-run the model and re-save manually by selecting relevant code lines then knit (or delete the RDS object)
+  {
+    mod_size <- readRDS(here("R_output", "model_size.RDS"))
+  } else {
+    
 mod_size <- brm(
   bf(scale_size ~ 0 + band_number + band_number:population), ## we use that notation throughout to have an intercept and a population effect per morph, rather than having morph contrasts
   data = subset(data, session == 1),
@@ -224,6 +231,9 @@ mod_size <- brm(
   ),
   backend = "cmdstanr", seed = 42, control = list(max_treedepth = 20)
 )
+
+  saveRDS(mod_size, file = here("R_output", "model_size.RDS"))
+}
 ```
 
 Let's do some basic checks (list below not exhaustive, see vignettes of the `tidybayes` package)
@@ -243,9 +253,9 @@ Everything seems in order, let's move to the big parasite-behaviour model
 
 ## 2C - preparing the multivariate behaviour-parasite model
 
-OK, before building the big multivariate model, let's check that the families we have in mind for each submodel are fine. The trematode and nematode submodels should be OK (we'll still check them later), let's focus our effort on the movement and food intake model.
+OK, before building the big multivariate model, let's check that the families we have in mind for each submodel are fine. The trematode and nematode submodels should be OK (we'll still check them later in the full model), let's focus our effort on the movement and food intake model.
 
-First, our food intake submodel. Food intake is a proportion of the total food given, so a Beta model should be natural. There are few zeroes which could be a problem, but we can solve that by setting them to the detection limit of our balance and using left-censoring (so we say that all we know is that they ate below the 0.0001g detection threshold). Let's try:
+First, our food intake submodel. Food intake is a proportion of the total food given, so a Beta model should be natural. There are a few zeroes inside which could be a problem, but we can solve that by setting them to the detection limit of our balance and using left-censoring (so we reinterpret the observed zeroes as actually "below the 0.0001g detection threshold"). Let's try:
 
 ```{r food-model-test}
 data_test <- data %>%
@@ -298,7 +308,7 @@ We do the same sort of tests for the movement submodel. Let's try a fairly typic
 ```{r mod-mvt-test-lognormal}
 
 mod_mvt_test_lognormal <- brm(
-  bf(latency | subset(is_active == TRUE) + ## we exclude non-moving snails
+  bf(latency | subset(is_active == TRUE) + ## we exclude non-active snails
     cens(FPT_10cm >= 20) ~ 0 + band_number + band_number:population +
     scale_size + (1 | series) + (1 | fullID)),
   family = lognormal,
@@ -387,7 +397,7 @@ table(paste("is it active?",data$is_active),paste("did it move beyond 10cm?",dat
 ```{r test-how-many-slow-snails2}
 ggplot(data)+
   geom_histogram(aes(FPT_2cm))+
-  scale_x_continuous("latency to become active (min)")
+  scale_x_continuous("latency to become active (min)")+
   facet_wrap(~paste("is it active,",is_active)+paste("did it move beyond 10 cm?",moved_out))
 
 ggplot(data)+
@@ -395,6 +405,8 @@ ggplot(data)+
   scale_x_continuous("latency to leave the 10cm *after one became active* (min)")+
   facet_wrap(~paste("is it active,",is_active)+paste("did it move beyond 10 cm?",moved_out))
 ```
+
+It's important (and reassuring) to see that the key results from the fixed effects are kept whatever the implementation of the model :)
 
 ## 2D - actually doing the multivariate model
 
@@ -449,6 +461,13 @@ prior <- c(
 Then we build the model:
 
 ```{r multi-model}
+if (file.exists(here("R_output", "model_multi.RDS")))
+# this if-else statement is avoid re-fitting a model when knitting Rmd file if there is already one existing in R_output
+# to override, re-run the model and re-save manually by selecting relevant code lines then knit (or delete the RDS object)
+  {
+    mod_multi <- readRDS(here("R_output", "model_multi.RDS"))
+  } else {
+    
 mod_multi <- brm(mvbf(bf_food + bf_trema + bf_nema_live + bf_mvt),
   data = data,
   chains = 4, iter = 4000, warmup = 2000,
@@ -456,6 +475,10 @@ mod_multi <- brm(mvbf(bf_food + bf_trema + bf_nema_live + bf_mvt),
   backend = "cmdstanr", seed = 42, 
   control = list(adapt_delta = 0.99, max_treedepth = 10)
 )
+
+
+  saveRDS(mod_multi, file = here("R_output", "model_multi.RDS"))
+  }
 
 summary(mod_multi)
 

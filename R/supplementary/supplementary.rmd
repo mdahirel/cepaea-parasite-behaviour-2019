@@ -12,19 +12,50 @@ knitr::opts_chunk$set(
   echo = FALSE, warning = FALSE,
   message = FALSE, eval = TRUE, dev = "cairo_pdf"
 )
-## cairo is needed as device to properly render the plots with greek letters in pdf
 ```
 
-```{r load-packages}
+```{r packages-loading}
+library(matrixStats) # CRAN v0.61.0
 
-library(tidyverse)   # CRAN v1.3.1
+library(cmdstanr) # [github::stan-dev/cmdstanr] v0.4.0.9000
+library(brms) # CRAN v2.16.3
 
-library(here)        # CRAN v1.0.1
+library(tidyverse) # CRAN v1.3.1
+
+library(bayesplot) # CRAN v1.8.1
+library(tidybayes) # CRAN v3.0.2
+
+library(patchwork) # CRAN v1.1.1
+
+library(here) # CRAN v1.0.1
+
+options(mc.cores = 4) ## to reduce/increase depending on cores available on your machine
 ```
+
 
 # S1 - detailed math description of both models
 
+## Size model
+
+
+## Multivariate model of parasites abundance and snail behaviours
+
+
 # S2 - descriptive stats about parasites 
+
+```{r data-load}
+raw_parasite <- read_csv(here("data", "cepaea_2019_parasite.csv"))
+
+data_parasite <- raw_parasite %>%
+  mutate(population = fct_relevel(factor(population), "shaded", after = Inf)) %>% # factor reordering
+  mutate(Nematode_live_all = Nematode_0_1_free + Nematode_1_3_free +
+           Nematode_3_5_free + Nematode_5_plus_free + Nematode_1_3_lung + 
+           Nematode_3_5_lung + Nematode_5_plus_lung,
+         Nematode_encaps_all = Nematode_white_encaps + Nematode_dark_encaps,
+         Acari_live_all = Acari_kidney + Acari_digestive
+         ) %>% 
+  mutate(session = 1)
+```
 
 (morph and population specific prevalence, as well as min/mean/median/max CI abundance and/or intensities)
 
@@ -109,39 +140,45 @@ data_parasite %>%
 
 # S3 - pairwise posterior comparisons for each trait
 
-# S4 -  Posterior proportion of total variance associated with fixed effects vs. random effects, for both behavioural traits with repeated measures. 
+# S4 -  Posterior proportion of total variance associated with fixed effects vs. random effects in movement and food intake
 
-See **Methods** and **Supplementary Material 1** for a description of the model underlying these estimates.
+Both movement behaviour and food intake were observed twice, which allows us to partition variance into among-individual and within-individual components. We show that although in both cases, within-individual/"residual" variation is the dominant component, there is a non-negligible among-individual variance component: both traits are repeatable (**Supporting Information Figure SX**).
 
-<!--need to reimport, and so save, the big multivariate model-->
+```{r fig-varpart}
+## the variables used to fit models are scaled
+## but that's not a problem since we are plotting **relative** variance components here
 
-no need of complex stuff for repeatabilities, the two repeatable traits are gaussian here
+## in each case there are four variance components: 
+## the fixed effects, the individual-level random effects, 
+## the experimental session random effects, and the residual within-individual variation
 
-```{r}
-## expressed on scale components but OK because we plot % of variance
+
+## here for the movement model
 varcomps_mvt <- tibble(
-  VF = rowVars(posterior_linpred(mod, re_formula = NA, resp = "scalemvt")),
-  VI = VarCorr(mod, summary = FALSE)$fullID$sd[, "scalemvt_Intercept"]^2,
-  Vseries = VarCorr(mod, summary = FALSE)$series$sd[, "scalemvt_Intercept"]^2,
-  VR = (posterior_samples(mod, pars = "sigma_scalemvt")[, 1])^2
+  VF = rowVars(posterior_linpred(mod_multi, re_formula = NA, resp = "scalemvt")),
+  VI = VarCorr(mod_multi, summary = FALSE)$fullID$sd[, "scalemvt_Intercept"]^2,
+  Vseries = VarCorr(mod_multi, summary = FALSE)$series$sd[, "scalemvt_Intercept"]^2,
+  VR = (posterior_samples(mod_multi, pars = "sigma_scalemvt")[, 1])^2
 ) %>%
   mutate(
     trait = "mvt",
     VP = VF + VI + Vseries + VR
   )
 
+## and here for the food intake model
 varcomps_food <- tibble(
-  VF = rowVars(posterior_linpred(mod, re_formula = NA, resp = "scalefood")),
-  VI = VarCorr(mod, summary = FALSE)$fullID$sd[, "scalefood_Intercept"]^2,
-  Vseries = VarCorr(mod, summary = FALSE)$series$sd[, "scalefood_Intercept"]^2,
-  VR = (posterior_samples(mod, pars = "sigma_scalefood")[, 1])^2
+  VF = rowVars(posterior_linpred(mod_multi, re_formula = NA, resp = "scalefood")),
+  VI = VarCorr(mod_multi, summary = FALSE)$fullID$sd[, "scalefood_Intercept"]^2,
+  Vseries = VarCorr(mod_multi, summary = FALSE)$series$sd[, "scalefood_Intercept"]^2,
+  VR = (posterior_samples(mod_multi, pars = "sigma_scalefood")[, 1])^2
 ) %>%
   mutate(
     trait = "food",
     VP = VF + VI + Vseries + VR
   )
 
-rbind(varcomps_food, varcomps_mvt) %>%
+## we merge them and do some rearranging/ renaming
+varcomps <- rbind(varcomps_food, varcomps_mvt) %>%
   group_by(trait) %>%
   pivot_longer(cols = c(VF, VI, Vseries, VR), names_to = "varcomp", values_to = "variance") %>%
   ungroup() %>%
@@ -156,8 +193,11 @@ rbind(varcomps_food, varcomps_mvt) %>%
   mutate(trait = fct_recode(trait,
     `Food intake` = "food",
     `Movement speed` = "mvt"
-  )) %>%
-  ggplot() +
+  ))
+
+## and then we plot
+
+ggplot() +
   stat_halfeye(aes(y = varcomp, x = 100 * variance / VP),
     point_interval = mean_hdi, .width = c(0.001, 0.95),
     normalize = "xy"
@@ -172,6 +212,6 @@ rbind(varcomps_food, varcomps_mvt) %>%
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
 ```
 
-
+**Supporting Information Figure SX.** Mean (points) and posteriors for the proportion of variance explained by the different variance components. See **Methods** and **Supporting Information S1** for a description of the model underlying these estimates.
 
 # References
