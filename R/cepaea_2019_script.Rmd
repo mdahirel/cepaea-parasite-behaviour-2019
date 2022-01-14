@@ -348,7 +348,7 @@ mod_mvt_test_normal <- brm(
   0 + band_number + band_number:population +
     scale_size + (1 | series) + (1 | fullID)),
   data = data, chains = 4, iter = 2000, warmup = 1000,
-  prior = c( # priors are probably bad but this is just for testing
+  prior = c(
     set_prior("normal(0,1)", class = "b"),
     set_prior("normal(0,1)", class = "sd"),
     set_prior("normal(0,1)", class = "sigma")
@@ -367,7 +367,7 @@ mod_mvt_test_normal2 <- brm(
   0 + band_number + band_number:population +
     scale_size + (1 | series) + (1 | fullID)),
   data = data, chains = 4, iter = 2000, warmup = 1000,
-  prior = c( # priors are probably bad but this is just for testing
+  prior = c(
     set_prior("normal(0,1)", class = "b"),
     set_prior("normal(0,1)", class = "sd"),
     set_prior("normal(0,1)", class = "sigma")
@@ -548,7 +548,7 @@ ggplot(subset(data, dead == 0 & session == 1) %>%
               height = 0, col = "grey") +
   stat_eye(data = preds_size, 
            aes(band_number, .epred, fill = band_number), 
-           .width = c(0.01, 0.95), 
+           point_interval = mean_hdi, .width = c(0.001, 0.95),
            slab_alpha = 0.7) +
   scale_y_continuous("Shell diameter (mm)") +
   scale_x_discrete("Shell phenotype (band number)", labels = c("0 bands", "3 bands", "5 bands")) +
@@ -609,7 +609,7 @@ p_nema <- ggplot(subset(data, dead == 0 & session == 1) %>%
               height = 0, col = "grey") +
   stat_eye(data = preds_nematode, 
            aes(band_number, .epred, fill = band_number), 
-           .width = c(0.01, 0.95), slab_alpha = 0.7, 
+           .width = c(0.001, 0.95), slab_alpha = 0.7, 
            point_interval = mean_hdi) +
   scale_y_continuous("Nematodes") +
   scale_x_discrete("", labels = c("0 bands", "3 bands", "5 bands")) +
@@ -640,7 +640,7 @@ p_trema <- ggplot(subset(data, dead == 0 & session == 1) %>%
               height = 0, col = "grey") +
   stat_eye(data = preds_trematode, 
            aes(band_number, .epred, fill = band_number), 
-           .width = c(0.01, 0.95), slab_alpha = 0.7, 
+           .width = c(0.001, 0.95), slab_alpha = 0.7, 
            point_interval = mean_hdi) +
   scale_y_continuous("Trematodes") +
   scale_x_discrete("Shell phenotype (band number)", 
@@ -710,12 +710,12 @@ p_mvt <- ggplot(subset(data, is_active == TRUE) %>%
   stat_eye(
     data = preds_mvt, 
     aes(band_number, .epred, fill = band_number),
-    .width = c(0.01, 0.95), slab_alpha = 0.7, 
+    .width = c(0.001, 0.95), slab_alpha = 0.7, 
     point_interval = mean_hdi
   ) +
   scale_shape_manual(values = c(16, 21)) +
   scale_fill_manual(values = c("#fe9929", "#d95f0e", "#993404")) +
-  scale_y_continuous("Movement (standardised)") +
+  scale_y_continuous("Movement (1/latency to leave, scaled)") +
   scale_x_discrete("", labels = c("0 bands", "3 bands", "5 bands")) +
   facet_wrap(~population)
 ```
@@ -748,7 +748,7 @@ p_food <- ggplot(data %>%
   stat_eye(
     data = preds_food, 
     aes(band_number, .epred, fill = band_number),
-    .width = c(0.01, 0.95), slab_alpha = 0.7, 
+    .width = c(0.001, 0.95), slab_alpha = 0.7, 
     point_interval = mean_hdi
   ) +
   scale_fill_manual(values = c("#fe9929", "#d95f0e", "#993404")) +
@@ -790,7 +790,8 @@ First we create a general summary table that is easier to interrogate than the s
 
 ```{r general-summary}
 summary_mod <- mod_multi %>%
-  posterior_samples() %>%
+  as_draws_df() %>%
+  as_tibble() %>% 
   select(starts_with(c("Intercept", "b_", "sd_", "cor_fullID", "sigma"))) %>%
   pivot_longer(everything()) %>%
   group_by(name) %>%
