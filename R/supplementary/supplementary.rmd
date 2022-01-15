@@ -61,12 +61,12 @@ In this model, the intercepts $\beta_{0}$ are the morph-specific intercepts/mean
 
 The multivariate model used to analyse parasite abundances, movement behaviour, food intake and their individual-level correlations can be written as follows.
 
-Let $N_{o,m,s,i}$ and $T_{o,m,s,i}$ be the numbers of live nematodes and *Brachylaima* trematodes found in snail $i$ which was tested during session $s$, and $F_{o,m,s,i,t}$ and $M_{o,m,s,i,t}$ be the quantity of food ingested by snail $i$ (centered and scale to 1SD), and its movement activity during trial $t$ (also centered and scaled to 1SD), respectively. We then have:
+Let $N_{o,m,s,i}$ and $T_{o,m,s,i}$ be the numbers of live nematodes and *Brachylaima* trematodes found in snail $i$ which was tested during session $s$, and $F_{o,m,s,i,t}$ and $M_{o,m,s,i,t}$ be the quantity of food ingested by snail $i$ (centered and scaled to 1SD), and its movement activity during trial $t$ (also centered and scaled to 1SD), respectively. We then have:
 
 $$
 \begin{cases}
-N_{o,m,s,i} \sim \mathrm{Poisson}(\lambda_{m,s,i[N]}), & \text{if}\ o = 0 \\
-      N_{o,m,s,i} = 0, & \text{otherwise},
+N_{o,m,s,i} \sim \mathrm{Poisson}(\lambda_{m,s,i[N]}), & \text{if}\ o = 0 \text{ (sun-exposed population)}\\
+      N_{o,m,s,i} = 0, & \text{if}\ o = 1 \text{ (shaded population)},
 \end{cases}
 $$
 $$
@@ -104,7 +104,7 @@ $$
 \alpha_{s[M]} \sim \mathrm{Normal}(0,\sigma_{\alpha[M]}),
 $$
 $$
-\begin{bmatrix} \gamma_{[N]i} \\ \gamma_{[T]i} \\ \gamma_{[F]i} \\ \gamma_{[M]i} \end{bmatrix} 
+\begin{bmatrix} \gamma_{i[N]} \\ \gamma_{i[T]} \\ \gamma_{i[F]} \\ \gamma_{i[M]} \end{bmatrix} 
 \sim 
 \textrm{MVNormal}
 \begin{pmatrix}
@@ -118,14 +118,14 @@ $$
 \begin{bmatrix}
 \sigma_{\gamma[N]} & 0 & 0 & 0\\
 0 & \sigma_{\gamma[T]} & 0 & 0\\
-0 & 0 & \sigma_{\gamma[F} & 0\\
+0 & 0 & \sigma_{\gamma[F]} & 0\\
 0 & 0 & 0 & \sigma_{\gamma[M]}
 \end{bmatrix}
 \boldsymbol{R}
 \begin{bmatrix}
 \sigma_{\gamma[N]} & 0 & 0 & 0\\
 0 & \sigma_{\gamma[T]} & 0 & 0\\
-0 & 0 & \sigma_{\gamma[F} & 0\\
+0 & 0 & \sigma_{\gamma[F]} & 0\\
 0 & 0 & 0 & \sigma_{\gamma[M]}
 \end{bmatrix}.
 $$
@@ -593,7 +593,7 @@ preds_nematode %>%
 ```
 
 
-```{r fig.cap="Posterior pairwise differences in **Brachylaima** trematode abundance between snail morph × population combinations (on the latent log scale).", fig.height=6}
+```{r fig.cap="Posterior pairwise differences in *Brachylaima* trematode abundance between snail morph × population combinations (on the latent log scale).", fig.height=6}
 preds_trematode %>%
   mutate(group = paste(band_number, ", ", population, sep = "")) %>%
   compare_levels(.linpred, by = group) %>%
