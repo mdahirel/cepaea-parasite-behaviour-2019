@@ -18,7 +18,9 @@ knitr::opts_chunk$set(
   message = FALSE, eval = TRUE, dev = "cairo_pdf"
 )
 ```
-
+<!--setting things up so that figures and tables captions are in the format "figure/table S[number]." since we are in the supplementary-->
+<!--easy to adapt to journal requirements if needed-->
+<!--reason for the use of caption in headers-includes-->
 \captionsetup[table]{name=Table S,labelfont=bf, labelsep= period,labelformat=special}
 \captionsetup[figure]{name=Figure S,labelfont=bf, labelsep= period,labelformat=special}
 
@@ -35,9 +37,13 @@ library(tidybayes) # CRAN v3.0.2
 
 library(patchwork) # CRAN v1.1.1
 
+# for tables
+library(knitr) # CRAN v1.37
+library(kableExtra) # CRAN v1.3.4
+
 library(here) # CRAN v1.0.1
 
-options(mc.cores = 4) ## to reduce/increase depending on cores available on your machine
+options(mc.cores = 4) ## reduce if needed based on cores available
 ```
 
 
@@ -133,17 +139,19 @@ $$
 # S2 - Summary statistics on parasite infections and encapsulations
 
 ```{r data-load}
+## we load the data needed as in the main script cepaea_2019_script.Rmd (see there for details)
 raw_parasite <- read_csv(here("data", "cepaea_2019_parasite.csv"))
 raw_behaviour <- read_csv(here("data", "cepaea_2019_behaviour.csv"))
 
 data_parasite <- raw_parasite %>%
   mutate(population = fct_relevel(factor(population), "shaded", after = Inf)) %>% # factor reordering
-  mutate(Nematode_live_all = Nematode_0_1_free + Nematode_1_3_free +
-           Nematode_3_5_free + Nematode_5_plus_free + Nematode_1_3_lung + 
-           Nematode_3_5_lung + Nematode_5_plus_lung,
-         Nematode_encaps_all = Nematode_white_encaps + Nematode_dark_encaps,
-         Acari_live_all = Acari_kidney + Acari_digestive
-         ) %>% 
+  mutate(
+    Nematode_live_all = Nematode_0_1_free + Nematode_1_3_free +
+      Nematode_3_5_free + Nematode_5_plus_free + Nematode_1_3_lung +
+      Nematode_3_5_lung + Nematode_5_plus_lung,
+    Nematode_encaps_all = Nematode_white_encaps + Nematode_dark_encaps,
+    Acari_live_all = Acari_kidney + Acari_digestive
+  ) %>%
   mutate(session = 1)
 
 data <- raw_behaviour %>%
@@ -169,342 +177,430 @@ data <- data %>%
 
 In the following tables, we present descriptive information about the prevalence of each parasite (proportion of potential hosts infected) and the infection intensity (number of parasites per *actually infected* host).  
 
-For trematode and nematode data, the provided 95% intervals are Highest Density intervals based on Bernoulli (prevalence) and negative binomial (intensity) GLMs including with shell morph, population and their interaction as fixed effects. The intensity models are fitted on (number of parasites - 1), to account for the zero truncation. Priors are as in **S1**, with the addition of a $\mathrm{Half-Normal}(0,1)$ prior on the inverse of the negative binomial shape parameter, inspired by the authors of the Stan wiki: https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations.  
+For trematode and nematode data, the provided 95% intervals are Highest Density intervals based on Bernoulli (prevalence) and negative binomial (intensity) GLMs including with shell morph, population and their interaction as fixed effects. The intensity models are fitted on (number of parasites - 1), to account for the zero truncation inherent to intensity. Priors are as in **S1**, with the addition of a $\mathrm{Half-Normal}(0,1)$ prior on the inverse of the negative binomial shape parameter, inspired by the authors of the Stan wiki: https://github.com/stan-dev/stan/wiki/Prior-Choice-Recommendations.  
 
 Note that we do not provide 95% intervals for mites data, given how rare infections are in our dataset. We also do not provide either intensity information or 95% intervals for encapsulated parasites, for reasons outlined at the end of the main text **Methods**. That is, contrary to *current* infections, the probability of having at least one parasite trapped and the total number of parasites trapped in the shell both increase cumulatively with age. Therefore, in the absence of information about age, there is no useful quantitative inference that can be made from these data.  
 
 The tables below all exclude the individual that died during the experiment. That snail harboured `r subset(data_parasite$Nematode_live_all,data_parasite$dead==1)[1]` live nematodes, `r subset(data_parasite$Trematode_kidney,data_parasite$dead==1)[1]` live trematodes, `r subset(data_parasite$Acari_live_all,data_parasite$dead==1)[1]` live mites, had encapsulated `r subset(data_parasite$Nematode_encaps_all,data_parasite$dead==1)[1]` nematodes and `r subset(data_parasite$Acari_encaps,data_parasite$dead==1)[1]` mites.
 
-```{r}
-if (file.exists(here("R_output", "suppl_model_nema_prevalence.RDS")))
-  {
-    mod_nemaprev <- readRDS(here("R_output", "suppl_model_nema_prevalence.RDS"))
-  } else {
-    
-mod_nemaprev <- brm(
-  bf(Nematode_live_all>0  ~  0 + band_number,
-     family=bernoulli),
-  data = subset(data_parasite, population!="shaded"), chains = 4, iter = 2000, warmup = 1000,
-  prior = c(
-    set_prior("normal(0,1)", class = "b")
-  ),
-  backend = "cmdstanr", seed = 42)
+```{r nematode-prevalence-model}
+if (file.exists(here("R_output", "suppl_model_nema_prevalence.RDS"))) {
+  mod_nemaprev <- readRDS(here("R_output", "suppl_model_nema_prevalence.RDS"))
+} else {
+  mod_nemaprev <- brm(
+    bf(Nematode_live_all > 0 ~ 0 + band_number,
+      family = bernoulli
+    ),
+    data = subset(data_parasite, population != "shaded"),
+    chains = 4, iter = 2000, warmup = 1000,
+    prior = c(
+      set_prior("normal(0,1)", class = "b")
+    ),
+    backend = "cmdstanr", seed = 42
+  )
 
-  saveRDS(mod_nemaprev, file = here("R_output", "suppl_model_nema_prevalence.RDS"))
-  }
+  saveRDS(mod_nemaprev,
+    file = here("R_output", "suppl_model_nema_prevalence.RDS")
+  )
+}
 ```
 
-```{r}
-if (file.exists(here("R_output", "suppl_model_nema_intensity.RDS")))
-  {
-    mod_nemaintens <- readRDS(here("R_output", "suppl_model_nema_intensity.RDS"))
-  } else {
-    
-mod_nemaintens <- brm(
-  bf(Nematode_live_all - 1  ~  0 + band_number,
-  nlf(shape~1/invshape),
-     invshape~1,
-     family=negbinomial(link_shape = "identity")),
-  data = subset(data_parasite, Nematode_live_all>0 & population!="shaded"), chains = 4, iter = 2000, warmup = 1000,
-  prior = c(
-    set_prior("normal(0,1)", class = "b"),
-    set_prior("normal(0,1)",nlpar="invshape",lb=0)
-  ),
-  backend = "cmdstanr", seed = 42)  
+```{r nematode-intensity-model}
+if (file.exists(here("R_output", "suppl_model_nema_intensity.RDS"))) {
+  mod_nemaintens <- readRDS(here("R_output", "suppl_model_nema_intensity.RDS"))
+} else {
+  mod_nemaintens <- brm(
+    bf(Nematode_live_all - 1 ~ 0 + band_number,
+      nlf(shape ~ 1 / invshape),
+      invshape ~ 1,
+      family = negbinomial(link_shape = "identity")
+    ),
+    data = subset(data_parasite, Nematode_live_all > 0 & population != "shaded"),
+    chains = 4, iter = 2000, warmup = 1000,
+    prior = c(
+      set_prior("normal(0,1)", class = "b"),
+      set_prior("normal(0,1)", nlpar = "invshape", lb = 0)
+    ),
+    backend = "cmdstanr", seed = 42
+  )
 
-saveRDS(mod_nemaintens, file = here("R_output", "suppl_model_nema_intensity.RDS"))
-  }
+  saveRDS(mod_nemaintens,
+    file = here("R_output", "suppl_model_nema_intensity.RDS")
+  )
+}
 ```
 
-```{r}
-if (file.exists(here("R_output", "suppl_model_trema_prevalence.RDS")))
-  {
-    mod_tremaprev <- readRDS(here("R_output", "suppl_model_trema_prevalence.RDS"))
-  } else {
-    
-mod_tremaprev <- brm(
-  bf(Trematode_kidney>0  ~  0 + band_number + band_number : population,
-     family=bernoulli),
-  data = data_parasite, chains = 4, iter = 2000, warmup = 1000,
-  prior = c(
-    set_prior("normal(0,1)", class = "b")
-  ),
-  backend = "cmdstanr", seed = 42)
+```{r trematode-prevalence-model}
+if (file.exists(here("R_output", "suppl_model_trema_prevalence.RDS"))) {
+  mod_tremaprev <- readRDS(here("R_output", "suppl_model_trema_prevalence.RDS"))
+} else {
+  mod_tremaprev <- brm(
+    bf(Trematode_kidney > 0 ~ 0 + band_number + band_number:population,
+      family = bernoulli
+    ),
+    data = data_parasite,
+    chains = 4, iter = 2000, warmup = 1000,
+    prior = c(
+      set_prior("normal(0,1)", class = "b")
+    ),
+    backend = "cmdstanr", seed = 42
+  )
 
-  saveRDS(mod_tremaprev, file = here("R_output", "suppl_model_trema_prevalence.RDS"))
-  }
+  saveRDS(mod_tremaprev,
+    file = here("R_output", "suppl_model_trema_prevalence.RDS")
+  )
+}
 ```
 
-```{r}
-if (file.exists(here("R_output", "suppl_model_trema_intensity.RDS")))
-  {
-    mod_tremaintens <- readRDS(here("R_output", "suppl_model_trema_intensity.RDS"))
-  } else {
-    
-mod_tremaintens <- brm(
-  bf(Trematode_kidney - 1  ~  0 + band_number + band_number : population,
-  nlf(shape~1/invshape),
-     invshape~1,
-     family=negbinomial(link_shape = "identity")),
-  data = subset(data_parasite, Trematode_kidney>0), chains = 4, iter = 2000, warmup = 1000,
-  prior = c(
-    set_prior("normal(0,1)", class = "b"),
-    set_prior("normal(0,1)",nlpar="invshape",lb=0)
-  ),
-  backend = "cmdstanr", seed = 42)
+```{r trematode-intensity-model}
+if (file.exists(here("R_output", "suppl_model_trema_intensity.RDS"))) {
+  mod_tremaintens <- readRDS(here("R_output", "suppl_model_trema_intensity.RDS"))
+} else {
+  mod_tremaintens <- brm(
+    bf(Trematode_kidney - 1 ~ 0 + band_number + band_number:population,
+      nlf(shape ~ 1 / invshape),
+      invshape ~ 1,
+      family = negbinomial(link_shape = "identity")
+    ),
+    data = subset(data_parasite, Trematode_kidney > 0),
+    chains = 4, iter = 2000, warmup = 1000,
+    prior = c(
+      set_prior("normal(0,1)", class = "b"),
+      set_prior("normal(0,1)", nlpar = "invshape", lb = 0)
+    ),
+    backend = "cmdstanr", seed = 42
+  )
 
-saveRDS(mod_tremaintens, file = here("R_output", "suppl_model_trema_intensity.RDS"))
-  }
+  saveRDS(mod_tremaintens,
+    file = here("R_output", "suppl_model_trema_intensity.RDS")
+  )
+}
 ```
 
-```{r}
+```{r make-nematodes-tables}
+
+# we prepare the summary statistics based directly on observed data
+# like mean, N, min, max
 nema_obs <- data_parasite %>%
-  filter(dead==0) %>% 
+  filter(dead == 0) %>%
   group_by(population, band_number) %>%
-  summarise(n = length(Nematode_live_all),
-            n_infected = length(subset(Nematode_live_all,Nematode_live_all>0)),
-            prevalence = mean(Nematode_live_all > 0)%>% round(digits=2),
-            mean_intensity = mean(subset(Nematode_live_all,Nematode_live_all>0))%>% round(digits=2),
-            min_intensity = min(subset(Nematode_live_all,Nematode_live_all>0))%>% round(digits=2),
-            max_intensity = max(subset(Nematode_live_all,Nematode_live_all>0))%>% round(digits=2)) %>% 
-  ungroup() %>% 
-  mutate(mean_intensity=round(mean_intensity,2) %>% replace_na("--"),
-         max_intensity=replace(max_intensity,which(max_intensity<0),"--"),
-         min_intensity=replace(min_intensity,which(min_intensity>1000),"--"),
-         )
+  summarise(
+    n = length(Nematode_live_all),
+    n_infected = length(subset(Nematode_live_all, Nematode_live_all > 0)),
+    prevalence = mean(Nematode_live_all > 0) %>% round(digits = 2),
+    mean_intensity = mean(subset(Nematode_live_all, Nematode_live_all > 0)) %>% round(digits = 2),
+    min_intensity = min(subset(Nematode_live_all, Nematode_live_all > 0)) %>% round(digits = 2),
+    max_intensity = max(subset(Nematode_live_all, Nematode_live_all > 0)) %>% round(digits = 2)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    mean_intensity = round(mean_intensity, 2) %>% replace_na("--"),
+    max_intensity = replace(max_intensity, which(max_intensity < 0), "--"),
+    min_intensity = replace(min_intensity, which(min_intensity > 1000), "--"),
+  )
+
+# we use model predictions to create credible intervals
+
+nema_pred_prev <- data_parasite %>%
+  filter(population != "shaded") %>%
+  select(band_number, population) %>%
+  distinct() %>%
+  add_epred_draws(mod_nemaprev) %>%
+  mutate(prevalence = .epred) %>%
+  group_by(band_number, population) %>%
+  mean_hdi(prevalence) %>%
+  group_by(band_number, population) %>%
+  summarise(.lower = min(.lower), .upper = max(.upper)) %>% ## to work around HDIs in two pieces
+  ungroup() %>%
+  mutate(prevalence_interval = paste0("[", round(.lower, 2), "; ",
+    round(.upper, 2), "]",
+    sep = ""
+  )) %>%
+  select(band_number, population, prevalence_interval)
 
 
-nema_pred_prev <- data_parasite %>% 
-  filter(population!="shaded") %>% 
-  select(band_number,population) %>% 
-  distinct() %>% 
-  add_epred_draws(mod_nemaprev) %>% 
-  mutate(prevalence=.epred) %>% 
-  group_by(band_number,population) %>% 
-  mean_hdi(prevalence) %>% 
-  group_by(band_number,population) %>% 
-  summarise(.lower=min(.lower),.upper=max(.upper)) %>% ## to work around HDIs in two pieces
-  ungroup() %>% 
-  mutate(prevalence_interval = paste0("[", round(.lower, 2), "; ", round(.upper, 2), "]", sep = ""))%>% 
-  select(band_number,population,prevalence_interval)
+nema_pred_intens <- data_parasite %>%
+  filter(population != "shaded") %>%
+  select(band_number, population) %>%
+  distinct() %>%
+  add_epred_draws(mod_nemaintens) %>%
+  mutate(intensity = .epred + 1) %>%
+  group_by(band_number, population) %>%
+  mean_hdi(intensity) %>%
+  group_by(band_number, population) %>%
+  summarise(.lower = min(.lower), .upper = max(.upper)) %>% ## to work around HDIs in two pieces
+  ungroup() %>%
+  mutate(intensity_interval = paste0("[", round(.lower, 2), "; ",
+    round(.upper, 2), "]",
+    sep = ""
+  )) %>%
+  select(band_number, population, intensity_interval)
 
+# then we merge both
 
-nema_pred_intens <- data_parasite %>% 
-  filter(population!="shaded") %>% 
-  select(band_number,population) %>% 
-  distinct() %>% 
-  add_epred_draws(mod_nemaintens) %>% 
-  mutate(intensity=.epred+1) %>% 
-  group_by(band_number,population) %>% 
-  mean_hdi(intensity) %>% 
-  group_by(band_number,population) %>% 
-  summarise(.lower=min(.lower),.upper=max(.upper)) %>% ## to work around HDIs in two pieces
-  ungroup() %>% 
-  mutate(intensity_interval = paste0("[", round(.lower, 2), "; ", round(.upper, 2), "]", sep = "")) %>% 
-  select(band_number,population,intensity_interval)
-
-
-table_nema=left_join(nema_obs,nema_pred_prev) %>%
+table_nema <- left_join(nema_obs, nema_pred_prev) %>%
   left_join(nema_pred_intens) %>%
-  mutate(prevalence_interval=replace_na(prevalence_interval,"--"),
-         intensity_interval=replace_na(intensity_interval,"--")) %>% 
-  mutate(population = fct_recode(population,
-    `shaded habitat` = "shaded",
-    `open habitat` = "sun_exposed"
-  ),
-  band_number = fct_recode(band_number,
-                             `0 bands` ="0B",
-                             `3 bands` = "3B",
-                             `5 bands` = "5B")) %>%  
-  select(population,band_number,
-         n,n_infected,prevalence,prevalence_interval,
-         mean_intensity, intensity_interval,
-         min_intensity, max_intensity)
-
+  mutate(
+    prevalence_interval = replace_na(prevalence_interval, "--"),
+    intensity_interval = replace_na(intensity_interval, "--")
+  ) %>%
+  mutate(
+    population = fct_recode(population,
+      `shaded habitat` = "shaded",
+      `open habitat` = "sun_exposed"
+    ),
+    band_number = fct_recode(band_number,
+      `0 bands` = "0B",
+      `3 bands` = "3B",
+      `5 bands` = "5B"
+    )
+  ) %>%
+  select(
+    population, band_number,
+    n, n_infected, prevalence, prevalence_interval,
+    mean_intensity, intensity_interval,
+    min_intensity, max_intensity
+  )
 ```
 
-```{r}
+```{r make-and-display-trematodes-tables}
+# we prepare the summary statistics based directly on observed data
+# like mean, N, min, max
 trema_obs <- data_parasite %>%
-  filter(dead==0) %>% 
+  filter(dead == 0) %>%
   group_by(population, band_number) %>%
-  summarise(n = length(Trematode_kidney),
-            n_infected = length(subset(Trematode_kidney,Trematode_kidney>0)),
-            prevalence = mean(Trematode_kidney > 0)%>% round(digits=2),
-            mean_intensity = mean(subset(Trematode_kidney,Trematode_kidney>0))%>% round(digits=2),
-            min_intensity = min(subset(Trematode_kidney,Trematode_kidney>0))%>% round(digits=2),
-            max_intensity = max(subset(Trematode_kidney,Trematode_kidney>0))%>% round(digits=2)) %>% 
+  summarise(
+    n = length(Trematode_kidney),
+    n_infected = length(subset(Trematode_kidney, Trematode_kidney > 0)),
+    prevalence = mean(Trematode_kidney > 0) %>% round(digits = 2),
+    mean_intensity = mean(subset(Trematode_kidney, Trematode_kidney > 0)) %>% round(digits = 2),
+    min_intensity = min(subset(Trematode_kidney, Trematode_kidney > 0)) %>% round(digits = 2),
+    max_intensity = max(subset(Trematode_kidney, Trematode_kidney > 0)) %>% round(digits = 2)
+  ) %>%
   ungroup()
 
-
-trema_pred_prev <- data_parasite %>% 
-  select(band_number,population) %>% 
-  distinct() %>% 
-  add_epred_draws(mod_tremaprev) %>% 
-  mutate(prevalence=.epred) %>% 
-  group_by(band_number,population) %>% 
-  mean_hdi(prevalence) %>% 
-  group_by(band_number,population) %>% 
-  summarise(.lower=min(.lower),.upper=max(.upper)) %>% ## to work around HDIs in two pieces
-  ungroup() %>% 
-  mutate(prevalence_interval = paste0("[", round(.lower, 2), "; ", round(.upper, 2), "]", sep = ""))%>% 
-  select(band_number,population,prevalence_interval)
+# we use model predictions to create credible intervals
 
 
-trema_pred_intens <- data_parasite %>% 
-  select(band_number,population) %>% 
-  distinct() %>% 
-  add_epred_draws(mod_tremaintens) %>% 
-  mutate(intensity=.epred+1) %>% 
-  group_by(band_number,population) %>% 
-  mean_hdi(intensity) %>% 
-  group_by(band_number,population) %>% 
-  summarise(.lower=min(.lower),.upper=max(.upper)) %>% ## to work around HDIs in two pieces
-  ungroup() %>% 
-  mutate(intensity_interval = paste0("[", round(.lower, 2), "; ", round(.upper, 2), "]", sep = "")) %>% 
-  select(band_number,population,intensity_interval)
+trema_pred_prev <- data_parasite %>%
+  select(band_number, population) %>%
+  distinct() %>%
+  add_epred_draws(mod_tremaprev) %>%
+  mutate(prevalence = .epred) %>%
+  group_by(band_number, population) %>%
+  mean_hdi(prevalence) %>%
+  group_by(band_number, population) %>%
+  summarise(.lower = min(.lower), .upper = max(.upper)) %>% ## to work around HDIs in two pieces
+  ungroup() %>%
+  mutate(prevalence_interval = paste0("[", round(.lower, 2), "; ",
+    round(.upper, 2), "]",
+    sep = ""
+  )) %>%
+  select(band_number, population, prevalence_interval)
 
 
-table_trema = left_join(trema_obs,trema_pred_prev) %>%
+trema_pred_intens <- data_parasite %>%
+  select(band_number, population) %>%
+  distinct() %>%
+  add_epred_draws(mod_tremaintens) %>%
+  mutate(intensity = .epred + 1) %>%
+  group_by(band_number, population) %>%
+  mean_hdi(intensity) %>%
+  group_by(band_number, population) %>%
+  summarise(.lower = min(.lower), .upper = max(.upper)) %>% ## to work around HDIs in two pieces
+  ungroup() %>%
+  mutate(intensity_interval = paste0("[", round(.lower, 2), "; ",
+    round(.upper, 2), "]",
+    sep = ""
+  )) %>%
+  select(band_number, population, intensity_interval)
+
+# then we merge both
+
+table_trema <- left_join(trema_obs, trema_pred_prev) %>%
   left_join(trema_pred_intens) %>%
-  mutate(population = fct_recode(population,
-    `shaded habitat` = "shaded",
-    `open habitat` = "sun_exposed"
-  ),
-  band_number = fct_recode(band_number,
-                             `0 bands` ="0B",
-                             `3 bands` = "3B",
-                             `5 bands` = "5B")) %>%  
-  select(population,band_number,
-         n,n_infected,prevalence,prevalence_interval,
-         mean_intensity, intensity_interval,
-         min_intensity, max_intensity)
-
+  mutate(
+    population = fct_recode(population,
+      `shaded habitat` = "shaded",
+      `open habitat` = "sun_exposed"
+    ),
+    band_number = fct_recode(band_number,
+      `0 bands` = "0B",
+      `3 bands` = "3B",
+      `5 bands` = "5B"
+    )
+  ) %>%
+  select(
+    population, band_number,
+    n, n_infected, prevalence, prevalence_interval,
+    mean_intensity, intensity_interval,
+    min_intensity, max_intensity
+  )
 ```
 
-```{r}
+```{r make-mite-tables}
+## mite table is observation data only
+
 Acari_obs <- data_parasite %>%
-  filter(dead==0) %>% 
+  filter(dead == 0) %>%
   group_by(population, band_number) %>%
-  summarise(n = length(Acari_live_all),
-            n_infected = length(subset(Acari_live_all,Acari_live_all>0)),
-            prevalence = mean(Acari_live_all > 0) %>% round(digits=2),
-            mean_intensity = mean(subset(Acari_live_all,Acari_live_all>0))%>% round(digits=2),
-            min_intensity = min(subset(Acari_live_all,Acari_live_all>0)),
-            max_intensity = max(subset(Acari_live_all,Acari_live_all>0))) %>% 
-  ungroup()%>% 
-  mutate(mean_intensity=round(mean_intensity,2) %>% replace_na("--"),
-         max_intensity=replace(max_intensity,which(max_intensity<0),"--"),
-         min_intensity=replace(min_intensity,which(min_intensity>1000),"--"),
-         ) %>%
-  mutate(population = fct_recode(population,
-    `shaded habitat` = "shaded",
-    `open habitat` = "sun_exposed"
-  ),
-  band_number = fct_recode(band_number,
-                             `0 bands` ="0B",
-                             `3 bands` = "3B",
-                             `5 bands` = "5B"))
+  summarise(
+    n = length(Acari_live_all),
+    n_infected = length(subset(Acari_live_all, Acari_live_all > 0)),
+    prevalence = mean(Acari_live_all > 0) %>% round(digits = 2),
+    mean_intensity = mean(subset(Acari_live_all, Acari_live_all > 0)) %>% round(digits = 2),
+    min_intensity = min(subset(Acari_live_all, Acari_live_all > 0)),
+    max_intensity = max(subset(Acari_live_all, Acari_live_all > 0))
+  ) %>%
+  ungroup() %>%
+  mutate(
+    mean_intensity = round(mean_intensity, 2) %>% replace_na("--"),
+    max_intensity = replace(max_intensity, which(max_intensity < 0), "--"),
+    min_intensity = replace(min_intensity, which(min_intensity > 1000), "--"),
+  ) %>%
+  mutate(
+    population = fct_recode(population,
+      `shaded habitat` = "shaded",
+      `open habitat` = "sun_exposed"
+    ),
+    band_number = fct_recode(band_number,
+      `0 bands` = "0B",
+      `3 bands` = "3B",
+      `5 bands` = "5B"
+    )
+  )
 ```
 
-```{r}
+```{r make-encaps-tables}
+## encapsulations table is observation data only
+
 encaps_obs <- data_parasite %>%
-  filter(dead==0) %>% 
+  filter(dead == 0) %>%
   group_by(population, band_number) %>%
-  summarise(n = length(Acari_encaps),
-            p_encaps_nema = mean(Nematode_encaps_all > 0) %>% round(digits=2),
-            p_encaps_mite = mean(Acari_encaps > 0) %>% round(digits=2)) %>% 
-  ungroup()%>% 
-  mutate(population = fct_recode(population,
-    `shaded habitat` = "shaded",
-    `open habitat` = "sun_exposed"
+  summarise(
+    n = length(Acari_encaps),
+    p_encaps_nema = mean(Nematode_encaps_all > 0) %>% round(digits = 2),
+    p_encaps_mite = mean(Acari_encaps > 0) %>% round(digits = 2)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    population = fct_recode(population,
+      `shaded habitat` = "shaded",
+      `open habitat` = "sun_exposed"
+    ),
+    band_number = fct_recode(band_number,
+      `0 bands` = "0B",
+      `3 bands` = "3B",
+      `5 bands` = "5B"
+    )
+  )
+```
+
+```{r display-nematode-prevalence}
+kable(table_nema %>%
+  arrange(population, band_number) %>%
+  select(
+    `shell morph` = band_number, n,
+    prevalence, `95% interval` = prevalence_interval
   ),
-  band_number = fct_recode(band_number,
-                             `0 bands` ="0B",
-                             `3 bands` = "3B",
-                             `5 bands` = "5B"))
+booktabs = T,
+caption = "Morph- and population-dependent summary information about nematode prevalence"
+) %>%
+  pack_rows("Open habitat", 1, 3) %>%
+  pack_rows("Shaded habitat", 4, 6)
+
+### note you can add %>% kable_styling(latex_options = "HOLD_position")
+### at the end of each table display snippet if the section break below (\newpage)
+### isn't enough to keep them confined in place
 ```
 
-```{r}
-knitr::kable(table_nema %>% 
-               arrange(population,band_number) %>% 
-               select(`shell morph` = band_number,n,
-                      prevalence,`95% interval`=prevalence_interval), booktabs = T,
-             caption="Morph- and population-dependent summary information about nematode prevalence") %>%
-  kableExtra::pack_rows("Open habitat", 1,3) %>%
-  kableExtra::pack_rows("Shaded habitat", 4,6)%>%
-  kableExtra::kable_styling(latex_options = "HOLD_position")
+```{r display-nematode-intensity}
+kable(table_nema %>%
+  arrange(population, band_number) %>%
+  select(
+    `shell morph` = band_number,
+    `n(infected)` = n_infected,
+    `mean intensity` = mean_intensity,
+    `95% interval` = intensity_interval,
+    min = min_intensity, max = max_intensity
+  ),
+booktabs = T,
+caption = "Morph- and population-dependent summary information about nematode intensity of infection"
+) %>%
+  pack_rows("Open habitat", 1, 3) %>%
+  pack_rows("Shaded habitat", 4, 6)
 ```
 
-```{r}
-knitr::kable(table_nema %>% 
-               arrange(population,band_number) %>% 
-               select(`shell morph`=band_number,
-                                   `n(infected)`=n_infected,
-                                   `mean intensity`=mean_intensity, 
-                                   `95% interval`=intensity_interval,
-                                   min = min_intensity, max = max_intensity), booktabs = T,
-             caption="Morph- and population-dependent summary information about nematode intensity of infection")%>%
-  kableExtra::pack_rows("Open habitat", 1,3) %>%
-  kableExtra::pack_rows("Shaded habitat", 4,6)%>%
-  kableExtra::kable_styling(latex_options = "HOLD_position")
+```{r display-trematode-prevalence}
+kable(table_trema %>%
+  arrange(population, band_number) %>%
+  select(
+    `shell morph` = band_number, n,
+    prevalence, `95% interval` = prevalence_interval
+  ),
+booktabs = T,
+caption = "Morph- and population-dependent summary information about trematode prevalence"
+) %>%
+  pack_rows("Open habitat", 1, 3) %>%
+  pack_rows("Shaded habitat", 4, 6)
 ```
 
-```{r}
-knitr::kable(table_trema %>% 
-               arrange(population,band_number) %>% 
-               select(`shell morph`=band_number,n,
-                      prevalence,`95% interval`=prevalence_interval), booktabs = T,
-             caption="Morph- and population-dependent summary information about trematode prevalence")%>%
-  kableExtra::pack_rows("Open habitat", 1,3) %>%
-  kableExtra::pack_rows("Shaded habitat", 4,6)%>%
-  kableExtra::kable_styling(latex_options = "HOLD_position")
+```{r display-trematode-intensity}
+kable(table_trema %>%
+  arrange(population, band_number) %>%
+  select(
+    `shell morph` = band_number,
+    `n(infected)` = n_infected,
+    `mean intensity` = mean_intensity,
+    `95% interval` = intensity_interval,
+    min = min_intensity, max = max_intensity
+  ),
+booktabs = T,
+caption = "Morph- and population-dependent summary information about trematode intensity of infection"
+) %>%
+  pack_rows("Open habitat", 1, 3) %>%
+  pack_rows("Shaded habitat", 4, 6)
 ```
 
-```{r}
-knitr::kable(table_trema %>% 
-               arrange(population,band_number) %>% 
-               select(`shell morph`=band_number,
-                                   `n(infected)`=n_infected,
-                                   `mean intensity`=mean_intensity, 
-                                   `95% interval`=intensity_interval,
-                                   min = min_intensity, max = max_intensity), booktabs = T,
-             caption="Morph- and population-dependent summary information about trematode intensity of infection")%>%
-  kableExtra::pack_rows("Open habitat", 1,3) %>%
-  kableExtra::pack_rows("Shaded habitat", 4,6)%>%
-  kableExtra::kable_styling(latex_options = "HOLD_position")
+```{r display-mite-prevalence}
+kable(Acari_obs %>%
+  arrange(population, band_number) %>%
+  select(`shell morph` = band_number, n, prevalence),
+booktabs = T,
+caption = "Morph- and population-dependent summary information about mite prevalence"
+) %>%
+  pack_rows("Open habitat", 1, 3) %>%
+  pack_rows("Shaded habitat", 4, 6)
 ```
 
-```{r}
-knitr::kable(Acari_obs %>% 
-               arrange(population,band_number) %>%  select(`shell morph`=band_number,n,prevalence), booktabs = T,
-             caption="Morph- and population-dependent summary information about mite prevalence")%>%
-  kableExtra::pack_rows("Open habitat", 1,3) %>%
-  kableExtra::pack_rows("Shaded habitat", 4,6)%>%
-  kableExtra::kable_styling(latex_options = "HOLD_position")
+```{r display-mite-intensity}
+kable(Acari_obs %>%
+  arrange(population, band_number) %>%
+  select(
+    `shell morph` = band_number,
+    `n(infected)` = n_infected,
+    `mean intensity` = mean_intensity,
+    min = min_intensity, max = max_intensity
+  ),
+booktabs = T,
+caption = "Morph- and population-dependent summary information about mite intensity of infection"
+) %>%
+  pack_rows("Open habitat", 1, 3) %>%
+  pack_rows("Shaded habitat", 4, 6)
 ```
 
-```{r}
-knitr::kable(Acari_obs %>% 
-               arrange(population,band_number) %>% 
-               select(`shell morph`=band_number,
-                                   `n(infected)`=n_infected,
-                                   `mean intensity`=mean_intensity, 
-                                   min = min_intensity, max = max_intensity), booktabs = T,
-             caption="Morph- and population-dependent summary information about mite intensity of infection")%>%
-  kableExtra::pack_rows("Open habitat", 1,3) %>%
-  kableExtra::pack_rows("Shaded habitat", 4,6)%>%
-  kableExtra::kable_styling(latex_options = "HOLD_position")
-```
-
-```{r}
-knitr::kable(encaps_obs %>% 
-               arrange(population,band_number) %>%  select(`shell morph`=band_number,
-                                                           n,`proportion with encapsulated nematodes`=p_encaps_nema,
-                                                           `proportion with encapsulated mites`=p_encaps_mite), booktabs = T,
-             caption="Morph- and population-dependent summary information about parasite encapsulation in shells")%>%
-  kableExtra::pack_rows("Open habitat", 1,3) %>%
-  kableExtra::pack_rows("Shaded habitat", 4,6)%>%
-  kableExtra::kable_styling(latex_options = "HOLD_position")
+```{r display-encaps}
+kable(encaps_obs %>%
+  arrange(population, band_number) %>% select(
+    `shell morph` = band_number,
+    n, `proportion with encapsulated nematodes` = p_encaps_nema,
+    `proportion with encapsulated mites` = p_encaps_mite
+  ),
+booktabs = T,
+caption = "Morph- and population-dependent summary information about parasite encapsulation in shells"
+) %>%
+  pack_rows("Open habitat", 1, 3) %>%
+  pack_rows("Shaded habitat", 4, 6)
 ```
 
 \newpage
@@ -512,11 +608,12 @@ knitr::kable(encaps_obs %>%
 # S3 - Pairwise posterior comparisons (multivariate model)
 
 ```{r loading-model}
-mod_multi <- readRDS(here("R_output","model_multi.RDS"))
+mod_multi <- readRDS(here("R_output", "model_multi.RDS"))
 ```
 
 
-```{r}
+```{r generate-predictions}
+# " first we make predictions for each trait, much like in the main script
 preds_food <- data %>%
   select(population, band_number, mean_food, sd_food) %>%
   distinct() %>%
@@ -524,14 +621,17 @@ preds_food <- data %>%
   add_epred_draws(mod_multi, re_formula = NA, resp = "scalefood") %>%
   mutate(.epred = .epred * sd_food + mean_food) %>%
   ungroup() %>%
-  mutate(population = fct_recode(population,
-    `shaded habitat` = "shaded",
-    `open habitat` = "sun_exposed"
-  ),
-  band_number = fct_recode(band_number,
-                           `0 bands` = "0B",
-                           `3 bands` = "3B",
-                           `5 bands` = "5B"))
+  mutate(
+    population = fct_recode(population,
+      `shaded habitat` = "shaded",
+      `open habitat` = "sun_exposed"
+    ),
+    band_number = fct_recode(band_number,
+      `0 bands` = "0B",
+      `3 bands` = "3B",
+      `5 bands` = "5B"
+    )
+  )
 
 preds_mvt <- data %>%
   select(population, band_number) %>%
@@ -539,14 +639,17 @@ preds_mvt <- data %>%
   mutate(scale_size = 0, session = 1, is_active = TRUE) %>%
   add_epred_draws(mod_multi, re_formula = NA, resp = "scalemvt") %>%
   ungroup() %>%
-  mutate(population = fct_recode(population,
-    `shaded habitat` = "shaded",
-    `open habitat` = "sun_exposed"
-  ),
-  band_number = fct_recode(band_number,
-                           `0 bands` = "0B",
-                           `3 bands` = "3B",
-                           `5 bands` = "5B"))
+  mutate(
+    population = fct_recode(population,
+      `shaded habitat` = "shaded",
+      `open habitat` = "sun_exposed"
+    ),
+    band_number = fct_recode(band_number,
+      `0 bands` = "0B",
+      `3 bands` = "3B",
+      `5 bands` = "5B"
+    )
+  )
 
 preds_trematode <- data %>%
   select(band_number, population) %>%
@@ -554,40 +657,48 @@ preds_trematode <- data %>%
   mutate(scale_size = 0, session = 1) %>%
   add_linpred_draws(mod_multi, re_formula = NA, resp = "Trematodekidney") %>%
   ungroup() %>%
-  mutate(population = fct_recode(population,
-    `shaded habitat` = "shaded",
-    `open habitat` = "sun_exposed"
-  ),
-  band_number = fct_recode(band_number,
-                           `0 bands` = "0B",
-                           `3 bands` = "3B",
-                           `5 bands` = "5B"))
+  mutate(
+    population = fct_recode(population,
+      `shaded habitat` = "shaded",
+      `open habitat` = "sun_exposed"
+    ),
+    band_number = fct_recode(band_number,
+      `0 bands` = "0B",
+      `3 bands` = "3B",
+      `5 bands` = "5B"
+    )
+  )
 
 preds_nematode <- data %>%
   select(band_number) %>%
   distinct() %>%
-  mutate(scale_size = 0, session = 1, population = "sun_exposed") %>%  ## predictions are made at the average size
+  mutate(scale_size = 0, session = 1, population = "sun_exposed") %>% ## predictions are made at the average size
   add_linpred_draws(mod_multi, re_formula = NA, resp = "Nematodeliveall") %>%
   ungroup() %>%
-  mutate(population = fct_recode(population,
-    `open habitat` = "sun_exposed"
-  ),
-  band_number = fct_recode(band_number,
-                           `0 bands` = "0B",
-                           `3 bands` = "3B",
-                           `5 bands` = "5B"))
-
+  mutate(
+    population = fct_recode(population,
+      `open habitat` = "sun_exposed"
+    ),
+    band_number = fct_recode(band_number,
+      `0 bands` = "0B",
+      `3 bands` = "3B",
+      `5 bands` = "5B"
+    )
+  )
 ```
 
 ```{r fig.cap="Posterior pairwise differences in nematode abundance between snail morphs (on the latent log scale). Reminder: the model for nematode abundance only includes data from the sun-exposed population, since no live nematodes were found in the shaded population.", fig.height=3}
+# then we do pairwise comparisons and plot them for each trait (here nematode abundance)
 preds_nematode %>%
   mutate(group = paste(band_number, ", ", population, sep = "")) %>%
   compare_levels(.linpred, by = group) %>%
-  ggplot()+
-  stat_halfeye(aes(.linpred,group),.width=c(0.001,0.95),point_interval="mean_hdi") +
-  geom_vline(xintercept=0,lty=2)+
-  scale_y_discrete("pair compared")+
-  scale_x_continuous("posterior predicted difference (latent log scale)")+
+  ggplot() +
+  stat_halfeye(aes(.linpred, group),
+    .width = c(0.001, 0.95), point_interval = "mean_hdi"
+  ) +
+  geom_vline(xintercept = 0, lty = 2) +
+  scale_y_discrete("pair compared") +
+  scale_x_continuous("posterior predicted difference (latent log scale)") +
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
 ```
@@ -597,11 +708,13 @@ preds_nematode %>%
 preds_trematode %>%
   mutate(group = paste(band_number, ", ", population, sep = "")) %>%
   compare_levels(.linpred, by = group) %>%
-  ggplot()+
-  stat_halfeye(aes(.linpred,group),.width=c(0.001,0.95),point_interval="mean_hdi") +
-  geom_vline(xintercept=0,lty=2)+
-  scale_y_discrete("pair compared")+
-  scale_x_continuous("posterior predicted difference (latent log scale)")+
+  ggplot() +
+  stat_halfeye(aes(.linpred, group),
+    .width = c(0.001, 0.95), point_interval = "mean_hdi"
+  ) +
+  geom_vline(xintercept = 0, lty = 2) +
+  scale_y_discrete("pair compared") +
+  scale_x_continuous("posterior predicted difference (latent log scale)") +
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
 ```
@@ -611,11 +724,13 @@ preds_trematode %>%
 preds_mvt %>%
   mutate(group = paste(band_number, ", ", population, sep = "")) %>%
   compare_levels(.epred, by = group) %>%
-  ggplot()+
-  stat_halfeye(aes(.epred,group),.width=c(0.001,0.95),point_interval="mean_hdi") +
-  geom_vline(xintercept=0,lty=2)+
-  scale_y_discrete("pair compared")+
-  scale_x_continuous("posterior predicted difference")+
+  ggplot() +
+  stat_halfeye(aes(.epred, group),
+    .width = c(0.001, 0.95), point_interval = "mean_hdi"
+  ) +
+  geom_vline(xintercept = 0, lty = 2) +
+  scale_y_discrete("pair compared") +
+  scale_x_continuous("posterior predicted difference") +
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
 ```
@@ -624,11 +739,13 @@ preds_mvt %>%
 preds_food %>%
   mutate(group = paste(band_number, ", ", population, sep = "")) %>%
   compare_levels(.epred, by = group) %>%
-  ggplot()+
-  stat_halfeye(aes(.epred,group),.width=c(0.001,0.95),point_interval="mean_hdi") +
-  geom_vline(xintercept=0,lty=2)+
-  scale_y_discrete("pair compared")+
-  scale_x_continuous("posterior predicted difference")+
+  ggplot() +
+  stat_halfeye(aes(.epred, group),
+    .width = c(0.001, 0.95), point_interval = "mean_hdi"
+  ) +
+  geom_vline(xintercept = 0, lty = 2) +
+  scale_y_discrete("pair compared") +
+  scale_x_continuous("posterior predicted difference") +
   cowplot::theme_half_open(11) +
   cowplot::background_grid(colour.major = "grey95", colour.minor = "grey95")
 ```
@@ -637,14 +754,14 @@ preds_food %>%
 
 # S4 - Posterior proportion of total variance associated with fixed effects vs. random effects in movement and food intake
 
-Both movement behaviour and food intake were observed twice, which allows us to partition variance into among-individual and within-individual components. We show that although in both cases, within-individual/"residual" variation is the dominant component, there is a non-negligible among-individual variance component: both traits are repeatable (**Supporting Information Figure S5**).
+Both movement behaviour and food intake were observed twice, which allows us to partition variance into among-individual and within-individual components. We show that although in both cases, within-individual/"residual" variation is the dominant component, there is a non-negligible among-individual variance component: both traits are repeatable to some extent (**Supporting Information Figure S5**).
 
 ```{r prep-fig-varpart}
 ## the variables used to fit models are scaled
 ## but that's not a problem since we are plotting **relative** variance components here
 
-## in each case there are four variance components: 
-## the fixed effects, the individual-level random effects, 
+## in each case there are four variance components:
+## the fixed effects, the individual-level random effects,
 ## the experimental session random effects, and the residual within-individual variation
 
 
@@ -653,7 +770,7 @@ varcomps_mvt <- tibble(
   VF = rowVars(posterior_linpred(mod_multi, re_formula = NA, resp = "scalemvt")),
   VI = VarCorr(mod_multi, summary = FALSE)$fullID$sd[, "scalemvt_Intercept"]^2,
   Vseries = VarCorr(mod_multi, summary = FALSE)$series$sd[, "scalemvt_Intercept"]^2,
-  VR = as_tibble(as_draws_df(mod_multi, variable="sigma_scalemvt"))$sigma_scalemvt^2
+  VR = as_tibble(as_draws_df(mod_multi, variable = "sigma_scalemvt"))$sigma_scalemvt^2
 ) %>%
   mutate(
     trait = "mvt",
@@ -665,7 +782,7 @@ varcomps_food <- tibble(
   VF = rowVars(posterior_linpred(mod_multi, re_formula = NA, resp = "scalefood")),
   VI = VarCorr(mod_multi, summary = FALSE)$fullID$sd[, "scalefood_Intercept"]^2,
   Vseries = VarCorr(mod_multi, summary = FALSE)$series$sd[, "scalefood_Intercept"]^2,
-  VR = as_tibble(as_draws_df(mod_multi, variable="sigma_scalefood"))$sigma_scalefood^2
+  VR = as_tibble(as_draws_df(mod_multi, variable = "sigma_scalefood"))$sigma_scalefood^2
 ) %>%
   mutate(
     trait = "food",
@@ -675,7 +792,10 @@ varcomps_food <- tibble(
 ## we merge them and do some rearranging/ renaming
 varcomps <- rbind(varcomps_food, varcomps_mvt) %>%
   group_by(trait) %>%
-  pivot_longer(cols = c(VF, VI, Vseries, VR), names_to = "varcomp", values_to = "variance") %>%
+  pivot_longer(
+    cols = c(VF, VI, Vseries, VR),
+    names_to = "varcomp", values_to = "variance"
+  ) %>%
   ungroup() %>%
   mutate(varcomp = fct_recode(varcomp,
     `fixed effects` = "VF",
