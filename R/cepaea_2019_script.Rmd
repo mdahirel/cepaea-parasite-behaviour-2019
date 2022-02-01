@@ -145,7 +145,7 @@ data <- data %>%
   )
 ```
 
-We then prep the movement variable, which is a bit more complex. We first need to create our actual latency to move away variable, by removing the time unactive `FPT1` from the total response times `FPT3` before using them. We need to do that properly in particular for the individuals that did not move at all (because a naive `FPT3 - FPT1` when both are 1200sec (the maximum) gives 0, which is the wrong answer). Finally, as the survival model on the untransformed latencies doesn't work well (see below), we'll also prepare a variable that is the inverse latency to analyse with a Gaussian model (so we'll center and scale it too). 
+We then prep the movement variable, which is a bit more complex. We first need to create our actual "latency to move away" variable, by removing the time unactive `FPT1` from the total response times `FPT3` before using them. We need to do that properly in particular for the individuals that did not move at all (because a naive `FPT3 - FPT1` when both are 1200sec (the maximum) gives 0, which is the wrong answer). Finally, as the survival model on the untransformed latencies doesn't work well (see below), we'll also prepare a variable that is the inverse latency to analyse with a Gaussian model later (so we'll center and scale it too). 
 
 
 ```{r data-prep-mvt}
@@ -485,6 +485,7 @@ summary(mod_multi)
 ## check that the subset arguments behaved correctly: there should be no NA-related warnings despite NAs in the dataset
 ## (because they've been "subsetted out")
 ## and the number of observations at the top of the summary should be = to the size of the dataset
+## because no rows containing an NA have been automatically discarded
 ```
 
 Fits fast and without major problems. Let's do some other checks:
@@ -561,14 +562,14 @@ ggplot(subset(data, dead == 0 & session == 1) %>%
 
 ## Figure 3 - parasite info
 
-(no Figure 2 from code; it is made of photographs)
+(NB: no Figure 2 from code; it is made of photographs)
 
 
-That figure is made of three parts: one for the encapsulated nematodes (no stats, no counts, we just want to have an idea about presence), one for the live nematodes, one for the live trematodes.
+This figure is made of three parts: one for the encapsulated nematodes (no stats, no counts, we just want to have an idea about presence), one for the live nematodes, one for the live trematodes.
 
 ### Encapsulated nematodes
 
-That subfigure is just the presence/absence of encapsulated nematodes in shells. We didn't do stats, and we don"t use counts, for the same reasons: contrary to live parasites that can be cleared, encapsulated parasites accumulate with age. So unless we know snails' age, which we don't, we can't do meaningful analyses. But having a broad qualitative idea of how many adults have had an encounter is useful:
+That subfigure is just the presence/absence of encapsulated nematodes in shells. We didn't do stats, and we don't use counts, for the same reasons: contrary to live parasites that can be cleared, encapsulated parasites accumulate with age. So unless we know snails' age, which we don't, we can't do meaningful quantitative analyses. But having a broad qualitative idea of how many adults have had an encounter is useful:
 
 ```{r fig-encaps}
 
@@ -784,7 +785,7 @@ preds_food %>%
 
 ## Table 1 - multivariate model summary
 
-Table 1 display the fixed effect coefficients values, and the random effects/ residual SDs. We do some cleaning/ordering so that the output can be directly copied into the markdown file of the manuscript
+Table 1 displays the fixed effect coefficients values, and the random effects/ residual SDs. We do some cleaning/ordering so that the output can be directly copied into the markdown file of the manuscript
 
 First we create a general summary table that is easier to interrogate than the summary() object, and that uses HDIs as intervals rather than quantile intervals:
 
