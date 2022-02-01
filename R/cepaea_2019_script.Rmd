@@ -108,12 +108,13 @@ First, during data entry, nematodes were divided by size class (live ones) and w
 ```{r data-prep1}
 data_parasite <- raw_parasite %>%
   mutate(population = fct_relevel(factor(population), "shaded", after = Inf)) %>% # factor reordering
-  mutate(Nematode_live_all = Nematode_0_1_free + Nematode_1_3_free +
-           Nematode_3_5_free + Nematode_5_plus_free + Nematode_1_3_lung + 
-           Nematode_3_5_lung + Nematode_5_plus_lung,
-         Nematode_encaps_all = Nematode_white_encaps + Nematode_dark_encaps,
-         Acari_live_all = Acari_kidney + Acari_digestive
-         ) %>% 
+  mutate(
+    Nematode_live_all = Nematode_0_1_free + Nematode_1_3_free +
+      Nematode_3_5_free + Nematode_5_plus_free + Nematode_1_3_lung +
+      Nematode_3_5_lung + Nematode_5_plus_lung,
+    Nematode_encaps_all = Nematode_white_encaps + Nematode_dark_encaps,
+    Acari_live_all = Acari_kidney + Acari_digestive
+  ) %>%
   mutate(session = 1)
 ```
 
@@ -155,9 +156,9 @@ data <- data %>%
     FPT_2cm = FPT1 / 60, ## let's just convert them to minutes
     FPT_10cm = FPT3 / 60
   ) %>%
-  mutate(is_active = FPT_2cm < 20) %>%  ## our indicator of which observations were just inactive snails
+  mutate(is_active = FPT_2cm < 20) %>% ## our indicator of which observations were just inactive snails
   mutate(latency = FPT_10cm - FPT_2cm) %>%
-  mutate(moved_out = FPT_10cm <20) %>%  ## tells us if snails actually moved out
+  mutate(moved_out = FPT_10cm < 20) %>% ## tells us if snails actually moved out
   mutate(mvt = 1 / latency) %>%
   mutate(
     latency = replace(latency, which(is_active == FALSE), 20),
@@ -181,7 +182,11 @@ Then we're ready to move on to the analyses!!
 First, some basic checks for the Methods. Here: how many snails have 2 valid movement data, 1 or 0 (because inactive during test):
 
 ```{r movement-counts}
-data %>% group_by(fullID) %>% summarise(Nvalid_obs=sum(is_active)) %>% select(Nvalid_obs) %>% table()
+data %>%
+  group_by(fullID) %>%
+  summarise(Nvalid_obs = sum(is_active)) %>%
+  select(Nvalid_obs) %>%
+  table()
 ```
 
 ## 2A: natural history of parasites
@@ -204,9 +209,9 @@ subset(data_parasite, data_parasite$Acari_encaps > 0)
 
 # what is the proportion of snails that are currently infected yet show no encapsulation (to show that all infections may not show encapsulations):
 table(
-  paste("has encaps", data_parasite$Nematode_encaps_all > 0), 
+  paste("has encaps", data_parasite$Nematode_encaps_all > 0),
   paste("has live nematodes", data_parasite$Nematode_live_all > 0)
-  )
+)
 ```
 
 ## 2B - univariate model for body size
@@ -218,19 +223,18 @@ if (file.exists(here("R_output", "model_size.RDS")))
   {
     mod_size <- readRDS(here("R_output", "model_size.RDS"))
   } else {
-    
-mod_size <- brm(
-  bf(scale_size ~ 0 + band_number + band_number:population), ## we use that notation throughout to have an intercept and a population effect per morph, rather than having morph contrasts
-  data = subset(data, session == 1),
-  # size variable is present twice in dataset (to go with behaviour)
-  # subset argument ensures it is counted only once and we don't artificially double the dataset
-  chains = 4, iter = 4000, warmup = 2000,
-  prior = c(
-    set_prior("normal(0,1)", class = "b"),
-    set_prior("normal(0,1)", class = "sigma")
-  ),
-  backend = "cmdstanr", seed = 42, control = list(max_treedepth = 20)
-)
+  mod_size <- brm(
+    bf(scale_size ~ 0 + band_number + band_number:population), ## we use that notation throughout to have an intercept and a population effect per morph, rather than having morph contrasts
+    data = subset(data, session == 1),
+    # size variable is present twice in dataset (to go with behaviour)
+    # subset argument ensures it is counted only once and we don't artificially double the dataset
+    chains = 4, iter = 4000, warmup = 2000,
+    prior = c(
+      set_prior("normal(0,1)", class = "b"),
+      set_prior("normal(0,1)", class = "sigma")
+    ),
+    backend = "cmdstanr", seed = 42, control = list(max_treedepth = 20)
+  )
 
   saveRDS(mod_size, file = here("R_output", "model_size.RDS"))
 }
@@ -239,7 +243,7 @@ mod_size <- brm(
 Let's do some basic checks (list below not exhaustive, see vignettes of the `tidybayes` package)
 
 ```{r model-size-checks}
-pp_check(mod_size,ndraws=100)
+pp_check(mod_size, ndraws = 100)
 pp_check(mod_size, "stat_2d")
 plot(mod_size)
 mcmc_rank_hist(mod_size)
@@ -276,8 +280,8 @@ mod_food_test_beta <- brm(
   backend = "cmdstanr", seed = 42, control = list(adapt_delta = 0.99, max_treedepth = 15)
 )
 
-pp_check(mod_food_test_beta,ndraws=100)
-pp_check(mod_food_test_beta,"stat_2d")
+pp_check(mod_food_test_beta, ndraws = 100)
+pp_check(mod_food_test_beta, "stat_2d")
 ```
 
 The Beta model inflates variance a lot compared to data.
@@ -297,7 +301,7 @@ mod_food_test_normal <- brm(
   backend = "cmdstanr", seed = 42, control = list(adapt_delta = 0.99, max_treedepth = 15)
 )
 
-pp_check(mod_food_test_normal,ndraws=100)
+pp_check(mod_food_test_normal, ndraws = 100)
 ```
 
 It's much better (there may be some divergence diagnostics. We should usually worry about them a bit more, but they are absent from the final big multivariate model below, which is the model we are interested in).
@@ -356,14 +360,14 @@ mod_mvt_test_normal <- brm(
   backend = "cmdstanr", seed = 42, control = list(adapt_delta = 0.99, max_treedepth = 15)
 )
 
-pp_check(mod_mvt_test_normal,ndraws=100)
+pp_check(mod_mvt_test_normal, ndraws = 100)
 ```
 
 This looks way better. Note that the even better approach would be to add left-censoring to the few active-but-did-not-cross the border snails (because their movement is low we don't really know how low):
 
 ```{r mod-mvt-test-gaussian2}
 mod_mvt_test_normal2 <- brm(
-  bf(scale_mvt | subset(is_active == TRUE) + cens(-1 * (moved_out==FALSE))~ ## we exclude non-moving snails
+  bf(scale_mvt | subset(is_active == TRUE) + cens(-1 * (moved_out == FALSE)) ~ ## we exclude non-moving snails
   0 + band_number + band_number:population +
     scale_size + (1 | series) + (1 | fullID)),
   data = data, chains = 4, iter = 2000, warmup = 1000,
@@ -374,7 +378,6 @@ mod_mvt_test_normal2 <- brm(
   ),
   backend = "cmdstanr", seed = 42, control = list(adapt_delta = 0.99, max_treedepth = 15)
 )
-
 ```
 
 but the outcome of the two models are nearly identical:
@@ -389,21 +392,21 @@ so we're going with the simplest for the big analysis.
 (they're nearly identical first because there aren't that many observations where individuals were active but didn't leave)
 
 ```{r test-how-many-slow-snails}
-table(paste("is it active?",data$is_active),paste("did it move beyond 10cm?",data$moved_out))
+table(paste("is it active?", data$is_active), paste("did it move beyond 10cm?", data$moved_out))
 ```
 
 (and second because these individuals already had the highest recorded latencies, so their inverse latencies are already low) (They're not for instance, individuals that started to be active minute 19 out of 20 so had no time to move out. They're individuals that became active at the same time as the others, but stayed within the 10 cm radius circle)
 
 ```{r test-how-many-slow-snails2}
-ggplot(data)+
-  geom_histogram(aes(FPT_2cm))+
-  scale_x_continuous("latency to become active (min)")+
-  facet_wrap(~paste("is it active,",is_active)+paste("did it move beyond 10 cm?",moved_out))
+ggplot(data) +
+  geom_histogram(aes(FPT_2cm)) +
+  scale_x_continuous("latency to become active (min)") +
+  facet_wrap(~ paste("is it active,", is_active) + paste("did it move beyond 10 cm?", moved_out))
 
-ggplot(data)+
-  geom_histogram(aes(latency))+
-  scale_x_continuous("latency to leave the 10cm *after one became active* (min)")+
-  facet_wrap(~paste("is it active,",is_active)+paste("did it move beyond 10 cm?",moved_out))
+ggplot(data) +
+  geom_histogram(aes(latency)) +
+  scale_x_continuous("latency to leave the 10cm *after one became active* (min)") +
+  facet_wrap(~ paste("is it active,", is_active) + paste("did it move beyond 10 cm?", moved_out))
 ```
 
 It's important (and reassuring) to see that the key results from the fixed effects are kept whatever the implementation of the model :)
@@ -413,30 +416,30 @@ It's important (and reassuring) to see that the key results from the fixed effec
 We start by writing the model formulas for each variable:
 
 ```{r multi-model-formulas}
-bf_trema <- bf(Trematode_kidney | subset(session == 1) ~  # for the parasite submodels, we subset to avoid duplication (see above in size model)
-  0 + band_number + band_number:population + scale_size +
-    (1 | series) + (1 | q | fullID),
-  family = poisson
+bf_trema <- bf(Trematode_kidney | subset(session == 1) ~ # for the parasite submodels, we subset to avoid duplication (see above in size model)
+0 + band_number + band_number:population + scale_size +
+  (1 | series) + (1 | q | fullID),
+family = poisson
 )
 
-bf_nema_live <- bf( Nematode_live_all | subset(session == 1 & population == "sun_exposed") ~ 
-                      # no nematode in the shaded population
-  0 + band_number + scale_size +
-    (1 | series) + (1 | q | fullID),
-  family = poisson
-  )
+bf_nema_live <- bf(Nematode_live_all | subset(session == 1 & population == "sun_exposed") ~
+# no nematode in the shaded population
+0 + band_number + scale_size +
+  (1 | series) + (1 | q | fullID),
+family = poisson
+)
 
 bf_food <- bf(scale_food ~
-                0 + band_number + band_number:population + scale_size +
-                (1 | series) + (1 | q | fullID),
-              family=gaussian
-              )
+0 + band_number + band_number:population + scale_size +
+  (1 | series) + (1 | q | fullID),
+family = gaussian
+)
 
 bf_mvt <- bf(scale_mvt | subset(is_active == TRUE) ~ # we exclude the non-active observations
-     0 + band_number + band_number:population + scale_size +
-    (1 | series) + (1 | q | fullID),
-  family = gaussian
-  )
+0 + band_number + band_number:population + scale_size +
+  (1 | series) + (1 | q | fullID),
+family = gaussian
+)
 ```
 
 (note the notation of the individual random effect 1|q|fullID, the q is here to denote that the random effects belong to the same covariance matrix)
@@ -445,17 +448,17 @@ Then we write the priors:
 
 ```{r multi-model-priors}
 prior <- c(
-    set_prior("normal(0,1)",
-      class = "b",
-      resp = c("Trematodekidney", "Nematodeliveall", "scalefood", "scalemvt")
-    ),
-    set_prior("normal(0,1)",
-      class = "sd",
-      resp = c("Trematodekidney", "Nematodeliveall", "scalefood", "scalemvt")
-    ),
-    set_prior("normal(0,1)", class = "sigma", resp = c("scalemvt", "scalefood")),
-    set_prior("lkj(2)", class = "cor")
-  )
+  set_prior("normal(0,1)",
+    class = "b",
+    resp = c("Trematodekidney", "Nematodeliveall", "scalefood", "scalemvt")
+  ),
+  set_prior("normal(0,1)",
+    class = "sd",
+    resp = c("Trematodekidney", "Nematodeliveall", "scalefood", "scalemvt")
+  ),
+  set_prior("normal(0,1)", class = "sigma", resp = c("scalemvt", "scalefood")),
+  set_prior("lkj(2)", class = "cor")
+)
 ```
 
 Then we build the model:
@@ -467,18 +470,17 @@ if (file.exists(here("R_output", "model_multi.RDS")))
   {
     mod_multi <- readRDS(here("R_output", "model_multi.RDS"))
   } else {
-    
-mod_multi <- brm(mvbf(bf_food + bf_trema + bf_nema_live + bf_mvt),
-  data = data,
-  chains = 4, iter = 4000, warmup = 2000,
-  prior = prior,
-  backend = "cmdstanr", seed = 42, 
-  control = list(adapt_delta = 0.99, max_treedepth = 10)
-)
+  mod_multi <- brm(mvbf(bf_food + bf_trema + bf_nema_live + bf_mvt),
+    data = data,
+    chains = 4, iter = 4000, warmup = 2000,
+    prior = prior,
+    backend = "cmdstanr", seed = 42,
+    control = list(adapt_delta = 0.99, max_treedepth = 10)
+  )
 
 
   saveRDS(mod_multi, file = here("R_output", "model_multi.RDS"))
-  }
+}
 
 summary(mod_multi)
 
@@ -491,10 +493,10 @@ summary(mod_multi)
 Fits fast and without major problems. Let's do some other checks:
 
 ```{r multi-model-ppchecks}
-pp_check(mod_multi,resp="scalefood",ndraws=100)
-pp_check(mod_multi,resp="Nematodeliveall",ndraws=100)
-pp_check(mod_multi,resp="Trematodekidney",ndraws=100)
-pp_check(mod_multi,resp="scalemvt",ndraws=100)
+pp_check(mod_multi, resp = "scalefood", ndraws = 100)
+pp_check(mod_multi, resp = "Nematodeliveall", ndraws = 100)
+pp_check(mod_multi, resp = "Trematodekidney", ndraws = 100)
+pp_check(mod_multi, resp = "scalemvt", ndraws = 100)
 ```
 
 Now we can move to building the tables and the figures
@@ -545,12 +547,15 @@ ggplot(subset(data, dead == 0 & session == 1) %>%
     `shaded habitat` = "shaded",
     `open habitat` = "sun_exposed"
   ))) +
-  geom_jitter(aes(band_number, shell_diameter), 
-              height = 0, col = "grey") +
-  stat_eye(data = preds_size, 
-           aes(band_number, .epred, fill = band_number), 
-           point_interval = mean_hdi, .width = c(0.001, 0.95),
-           slab_alpha = 0.7) +
+  geom_jitter(aes(band_number, shell_diameter),
+    height = 0, col = "grey"
+  ) +
+  stat_eye(
+    data = preds_size,
+    aes(band_number, .epred, fill = band_number),
+    point_interval = mean_hdi, .width = c(0.001, 0.95),
+    slab_alpha = 0.7
+  ) +
   scale_y_continuous("Shell diameter (mm)") +
   scale_x_discrete("Shell phenotype (band number)", labels = c("0 bands", "3 bands", "5 bands")) +
   scale_fill_manual(values = c("#fe9929", "#d95f0e", "#993404")) +
@@ -580,7 +585,7 @@ p_encaps <- data_parasite %>%
     `open habitat` = "sun_exposed"
   )) %>%
   group_by(population, band_number) %>%
-  summarise(percent_encaps = mean(Nematode_encaps_all > 0) * 100) %>% 
+  summarise(percent_encaps = mean(Nematode_encaps_all > 0) * 100) %>%
   ungroup() %>%
   ggplot() +
   geom_col(aes(band_number, percent_encaps), fill = "white", col = "grey") +
@@ -596,7 +601,7 @@ Then we do the live nematode subfigure. Like with size, we create predictions fi
 preds_nematode <- data %>%
   select(band_number) %>%
   distinct() %>%
-  mutate(scale_size = 0, session = 1, population = "sun_exposed") %>%  ## predictions are made at the average size
+  mutate(scale_size = 0, session = 1, population = "sun_exposed") %>% ## predictions are made at the average size
   add_epred_draws(mod_multi, re_formula = NA, resp = "Nematodeliveall") %>%
   ungroup() %>%
   mutate(population = fct_recode(population, `open habitat` = "sun_exposed"))
@@ -606,12 +611,15 @@ p_nema <- ggplot(subset(data, dead == 0 & session == 1) %>%
     `shaded habitat` = "shaded",
     `open habitat` = "sun_exposed"
   ))) +
-  geom_jitter(aes(band_number, Nematode_live_all), 
-              height = 0, col = "grey") +
-  stat_eye(data = preds_nematode, 
-           aes(band_number, .epred, fill = band_number), 
-           .width = c(0.001, 0.95), slab_alpha = 0.7, 
-           point_interval = mean_hdi) +
+  geom_jitter(aes(band_number, Nematode_live_all),
+    height = 0, col = "grey"
+  ) +
+  stat_eye(
+    data = preds_nematode,
+    aes(band_number, .epred, fill = band_number),
+    .width = c(0.001, 0.95), slab_alpha = 0.7,
+    point_interval = mean_hdi
+  ) +
   scale_y_continuous("Nematodes") +
   scale_x_discrete("", labels = c("0 bands", "3 bands", "5 bands")) +
   scale_fill_manual(values = c("#fe9929", "#d95f0e", "#993404")) +
@@ -637,15 +645,19 @@ p_trema <- ggplot(subset(data, dead == 0 & session == 1) %>%
     `shaded habitat` = "shaded",
     `open habitat` = "sun_exposed"
   ))) +
-  geom_jitter(aes(band_number, Trematode_kidney), 
-              height = 0, col = "grey") +
-  stat_eye(data = preds_trematode, 
-           aes(band_number, .epred, fill = band_number), 
-           .width = c(0.001, 0.95), slab_alpha = 0.7, 
-           point_interval = mean_hdi) +
+  geom_jitter(aes(band_number, Trematode_kidney),
+    height = 0, col = "grey"
+  ) +
+  stat_eye(
+    data = preds_trematode,
+    aes(band_number, .epred, fill = band_number),
+    .width = c(0.001, 0.95), slab_alpha = 0.7,
+    point_interval = mean_hdi
+  ) +
   scale_y_continuous("Trematodes") +
-  scale_x_discrete("Shell phenotype (band number)", 
-                   labels = c("0 bands", "3 bands", "5 bands")) +
+  scale_x_discrete("Shell phenotype (band number)",
+    labels = c("0 bands", "3 bands", "5 bands")
+  ) +
   scale_fill_manual(values = c("#fe9929", "#d95f0e", "#993404")) +
   facet_wrap(~population)
 ```
@@ -672,7 +684,6 @@ preds_trematode %>%
   mutate(group = paste(band_number, ", ", population, sep = "")) %>%
   compare_levels(.epred, by = group, fun = `/`) %>%
   mean_hdi()
-
 ```
 
 
@@ -700,18 +711,24 @@ p_mvt <- ggplot(subset(data, is_active == TRUE) %>%
   ))) +
   geom_line(aes(
     as.numeric(factor(band_number)) + 0.5 * session - 0.75, ## this is some taped-together solution to draw a line connecting the points together
-    scale_mvt, group = fullID), 
-    col = "grey") +
+    scale_mvt,
+    group = fullID
+  ),
+  col = "grey"
+  ) +
   geom_point(aes(
-    band_number, scale_mvt, pch = FPT3 == 20, 
-    group = session), 
-    position = position_dodge(width = 1), 
-    col = "grey", 
-    fill = "white") +
+    band_number, scale_mvt,
+    pch = FPT3 == 20,
+    group = session
+  ),
+  position = position_dodge(width = 1),
+  col = "grey",
+  fill = "white"
+  ) +
   stat_eye(
-    data = preds_mvt, 
+    data = preds_mvt,
     aes(band_number, .epred, fill = band_number),
-    .width = c(0.001, 0.95), slab_alpha = 0.7, 
+    .width = c(0.001, 0.95), slab_alpha = 0.7,
     point_interval = mean_hdi
   ) +
   scale_shape_manual(values = c(16, 21)) +
@@ -740,22 +757,27 @@ p_food <- ggplot(data %>%
     `open habitat (nematodes)` = "sun_exposed"
   ))) +
   geom_point(
-    aes(band_number, Food_intake, group = session), 
-    position = position_dodge(width = 1), col = "grey") +
+    aes(band_number, Food_intake, group = session),
+    position = position_dodge(width = 1), col = "grey"
+  ) +
   geom_line(
-    aes(as.numeric(factor(band_number)) + 0.5 * session - 0.75, 
-        Food_intake, group = fullID), 
-    col = "grey") +
+    aes(as.numeric(factor(band_number)) + 0.5 * session - 0.75,
+      Food_intake,
+      group = fullID
+    ),
+    col = "grey"
+  ) +
   stat_eye(
-    data = preds_food, 
+    data = preds_food,
     aes(band_number, .epred, fill = band_number),
-    .width = c(0.001, 0.95), slab_alpha = 0.7, 
+    .width = c(0.001, 0.95), slab_alpha = 0.7,
     point_interval = mean_hdi
   ) +
   scale_fill_manual(values = c("#fe9929", "#d95f0e", "#993404")) +
   scale_y_continuous("Food intake (g)") +
-  scale_x_discrete("Shell phenotype (band number)", 
-                   labels = c("0 bands", "3 bands", "5 bands")) +
+  scale_x_discrete("Shell phenotype (band number)",
+    labels = c("0 bands", "3 bands", "5 bands")
+  ) +
   facet_wrap(~population)
 ```
 
@@ -792,7 +814,7 @@ First we create a general summary table that is easier to interrogate than the s
 ```{r general-summary}
 summary_mod <- mod_multi %>%
   as_draws_df() %>%
-  as_tibble() %>% 
+  as_tibble() %>%
   select(starts_with(c("Intercept", "b_", "sd_", "cor_fullID", "sigma"))) %>%
   pivot_longer(everything()) %>%
   group_by(name) %>%
@@ -805,7 +827,13 @@ summary_mod %>%
 Then we use it to built Table 1
 ```{r table1}
 table1 <- summary_mod %>%
-  mutate(value = paste(round(value, 2), " [", round(.lower, 2), "; ", round(.upper, 2), "]", sep = "")) %>%
+  mutate(value = paste(round(value, 2) %>% format(nsmall = 2),
+    " [", round(.lower, 2) %>% format(nsmall = 2),
+    "; ",
+    round(.upper, 2) %>% format(nsmall = 2),
+    "]",
+    sep = ""
+  )) %>%
   filter(str_detect(name, "cor_fullID") == FALSE) %>%
   mutate(trait = case_when(
     str_detect(name, "Nematode") ~ "Nematode abundance",
@@ -828,9 +856,11 @@ table1 <- summary_mod %>%
   )) %>%
   select(coefficient, trait, value) %>%
   pivot_wider(names_from = "trait", values_from = "value") %>%
-  select(coefficient, 
-         `Nematode abundance`, `Trematode abundance`, 
-         `Movement`, `Food intake`) %>%
+  select(
+    coefficient,
+    `Nematode abundance`, `Trematode abundance`,
+    `Movement`, `Food intake`
+  ) %>%
   unnest(cols = c())
 
 table1[c(1, 2, 3, 5, 6, 7, 4, 9, 8, 10), ] %>% # just some reordering
@@ -844,7 +874,14 @@ And we use the correlation component of the summary for table 2
 ```{r table2}
 table2 <- summary_mod %>%
   filter(str_detect(name, "cor_fullID") == TRUE) %>%
-  mutate(value = paste(round(value, 2), " [", round(.lower, 2), "; ", round(.upper, 2), "]", sep = "")) %>%
+  mutate(value = paste(round(value, 2) %>% format(nsmall = 2),
+    " [",
+    round(.lower, 2) %>% format(nsmall = 2),
+    "; ",
+    round(.upper, 2) %>% format(nsmall = 2),
+    "]",
+    sep = ""
+  )) %>%
   mutate(
     response1 = case_when(
       str_detect(name, "cor_fullID__Nematode") ~ "Nematode abundance",
@@ -878,8 +915,9 @@ ggplot(data_parasite) +
     aes(band_number, shell_diameter), col = "red", size = 2
   ) +
   scale_y_continuous("Shell diameter (mm)") +
-  scale_x_discrete("Shell phenotype (band number)", 
-                   labels = c("0 bands", "3 bands", "5 bands"))+
+  scale_x_discrete("Shell phenotype (band number)",
+    labels = c("0 bands", "3 bands", "5 bands")
+  ) +
   facet_wrap(~population)
 ```
 
