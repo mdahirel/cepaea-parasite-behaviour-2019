@@ -288,13 +288,13 @@ nema_obs <- data_parasite %>%
     n = length(Nematode_live_all),
     n_infected = length(subset(Nematode_live_all, Nematode_live_all > 0)),
     prevalence = mean(Nematode_live_all > 0) %>% round(digits = 2),
-    mean_intensity = mean(subset(Nematode_live_all, Nematode_live_all > 0)) %>% round(digits = 2),
-    min_intensity = min(subset(Nematode_live_all, Nematode_live_all > 0)) %>% round(digits = 2),
-    max_intensity = max(subset(Nematode_live_all, Nematode_live_all > 0)) %>% round(digits = 2)
+    mean_intensity = mean(subset(Nematode_live_all, Nematode_live_all > 0)) %>% round(digits = 2) %>% format(nsmall = 2),
+    min_intensity = min(subset(Nematode_live_all, Nematode_live_all > 0)),
+    max_intensity = max(subset(Nematode_live_all, Nematode_live_all > 0))
   ) %>%
   ungroup() %>%
   mutate(
-    mean_intensity = round(mean_intensity, 2) %>% replace_na("--"),
+    mean_intensity = replace(mean_intensity, which(mean_intensity == "NaN"), "--"),
     max_intensity = replace(max_intensity, which(max_intensity < 0), "--"),
     min_intensity = replace(min_intensity, which(min_intensity > 1000), "--"),
   )
@@ -312,8 +312,8 @@ nema_pred_prev <- data_parasite %>%
   group_by(band_number, population) %>%
   summarise(.lower = min(.lower), .upper = max(.upper)) %>% ## to work around HDIs in two pieces
   ungroup() %>%
-  mutate(prevalence_interval = paste0("[", round(.lower, 2), "; ",
-    round(.upper, 2), "]",
+  mutate(prevalence_interval = paste0("[", format(round(.lower, 2), nsmall = 2), "; ",
+    format(round(.upper, 2), nsmall = 2), "]",
     sep = ""
   )) %>%
   select(band_number, population, prevalence_interval)
@@ -330,8 +330,8 @@ nema_pred_intens <- data_parasite %>%
   group_by(band_number, population) %>%
   summarise(.lower = min(.lower), .upper = max(.upper)) %>% ## to work around HDIs in two pieces
   ungroup() %>%
-  mutate(intensity_interval = paste0("[", round(.lower, 2), "; ",
-    round(.upper, 2), "]",
+  mutate(intensity_interval = paste0("[", format(round(.lower, 2), nsmall = 2), "; ",
+    format(round(.upper, 2), nsmall = 2), "]",
     sep = ""
   )) %>%
   select(band_number, population, intensity_interval)
@@ -373,9 +373,9 @@ trema_obs <- data_parasite %>%
     n = length(Trematode_kidney),
     n_infected = length(subset(Trematode_kidney, Trematode_kidney > 0)),
     prevalence = mean(Trematode_kidney > 0) %>% round(digits = 2),
-    mean_intensity = mean(subset(Trematode_kidney, Trematode_kidney > 0)) %>% round(digits = 2),
-    min_intensity = min(subset(Trematode_kidney, Trematode_kidney > 0)) %>% round(digits = 2),
-    max_intensity = max(subset(Trematode_kidney, Trematode_kidney > 0)) %>% round(digits = 2)
+    mean_intensity = mean(subset(Trematode_kidney, Trematode_kidney > 0)) %>% round(digits = 2) %>% format(nsmall = 2),
+    min_intensity = min(subset(Trematode_kidney, Trematode_kidney > 0)),
+    max_intensity = max(subset(Trematode_kidney, Trematode_kidney > 0))
   ) %>%
   ungroup()
 
@@ -392,8 +392,8 @@ trema_pred_prev <- data_parasite %>%
   group_by(band_number, population) %>%
   summarise(.lower = min(.lower), .upper = max(.upper)) %>% ## to work around HDIs in two pieces
   ungroup() %>%
-  mutate(prevalence_interval = paste0("[", round(.lower, 2), "; ",
-    round(.upper, 2), "]",
+  mutate(prevalence_interval = paste0("[", format(round(.lower, 2), nsmall = 2), "; ",
+    format(round(.upper, 2), nsmall = 2), "]",
     sep = ""
   )) %>%
   select(band_number, population, prevalence_interval)
@@ -409,8 +409,8 @@ trema_pred_intens <- data_parasite %>%
   group_by(band_number, population) %>%
   summarise(.lower = min(.lower), .upper = max(.upper)) %>% ## to work around HDIs in two pieces
   ungroup() %>%
-  mutate(intensity_interval = paste0("[", round(.lower, 2), "; ",
-    round(.upper, 2), "]",
+  mutate(intensity_interval = paste0("[", format(round(.lower, 2), nsmall = 2), "; ",
+    format(round(.upper, 2), nsmall = 2), "]",
     sep = ""
   )) %>%
   select(band_number, population, intensity_interval)
@@ -448,13 +448,13 @@ Acari_obs <- data_parasite %>%
     n = length(Acari_live_all),
     n_infected = length(subset(Acari_live_all, Acari_live_all > 0)),
     prevalence = mean(Acari_live_all > 0) %>% round(digits = 2),
-    mean_intensity = mean(subset(Acari_live_all, Acari_live_all > 0)) %>% round(digits = 2),
+    mean_intensity = mean(subset(Acari_live_all, Acari_live_all > 0)) %>% round(digits = 2) %>% format(nsmall = 2),
     min_intensity = min(subset(Acari_live_all, Acari_live_all > 0)),
     max_intensity = max(subset(Acari_live_all, Acari_live_all > 0))
   ) %>%
   ungroup() %>%
   mutate(
-    mean_intensity = round(mean_intensity, 2) %>% replace_na("--"),
+    mean_intensity = replace(mean_intensity, which(mean_intensity == "NaN"), "--"),
     max_intensity = replace(max_intensity, which(max_intensity < 0), "--"),
     min_intensity = replace(min_intensity, which(min_intensity > 1000), "--"),
   ) %>%
@@ -479,8 +479,8 @@ encaps_obs <- data_parasite %>%
   group_by(population, band_number) %>%
   summarise(
     n = length(Acari_encaps),
-    p_encaps_nema = mean(Nematode_encaps_all > 0) %>% round(digits = 2),
-    p_encaps_mite = mean(Acari_encaps > 0) %>% round(digits = 2)
+    p_encaps_nema = mean(Nematode_encaps_all > 0) %>% round(digits = 2) %>% format(nsmall = 2),
+    p_encaps_mite = mean(Acari_encaps > 0) %>% round(digits = 2) %>% format(nsmall = 2),
   ) %>%
   ungroup() %>%
   mutate(
@@ -503,6 +503,7 @@ kable(table_nema %>%
     `shell morph` = band_number, n,
     prevalence, `95% interval` = prevalence_interval
   ),
+align = c("l","r","r","r"),
 booktabs = T,
 caption = "Morph- and population-dependent summary information about nematode prevalence"
 ) %>%
@@ -524,6 +525,7 @@ kable(table_nema %>%
     `95% interval` = intensity_interval,
     min = min_intensity, max = max_intensity
   ),
+align = c("l","r","r","r","r","r"),
 booktabs = T,
 caption = "Morph- and population-dependent summary information about nematode intensity of infection"
 ) %>%
@@ -538,6 +540,7 @@ kable(table_trema %>%
     `shell morph` = band_number, n,
     prevalence, `95% interval` = prevalence_interval
   ),
+align = c("l","r","r","r"),
 booktabs = T,
 caption = "Morph- and population-dependent summary information about trematode prevalence"
 ) %>%
@@ -555,6 +558,7 @@ kable(table_trema %>%
     `95% interval` = intensity_interval,
     min = min_intensity, max = max_intensity
   ),
+align = c("l","r","r","r","r","r"),
 booktabs = T,
 caption = "Morph- and population-dependent summary information about trematode intensity of infection"
 ) %>%
@@ -566,6 +570,7 @@ caption = "Morph- and population-dependent summary information about trematode i
 kable(Acari_obs %>%
   arrange(population, band_number) %>%
   select(`shell morph` = band_number, n, prevalence),
+align = c("l","r","r"),
 booktabs = T,
 caption = "Morph- and population-dependent summary information about mite prevalence"
 ) %>%
@@ -582,6 +587,7 @@ kable(Acari_obs %>%
     `mean intensity` = mean_intensity,
     min = min_intensity, max = max_intensity
   ),
+align = c("l","r","r","r","r"),
 booktabs = T,
 caption = "Morph- and population-dependent summary information about mite intensity of infection"
 ) %>%
@@ -596,6 +602,7 @@ kable(encaps_obs %>%
     n, `proportion with encapsulated nematodes` = p_encaps_nema,
     `proportion with encapsulated mites` = p_encaps_mite
   ),
+align = c("l","r","r","r"),
 booktabs = T,
 caption = "Morph- and population-dependent summary information about parasite encapsulation in shells"
 ) %>%
