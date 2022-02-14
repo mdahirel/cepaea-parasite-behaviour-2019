@@ -28,10 +28,10 @@ This code is used to analyze data collected during Marine Proux's internship in 
 ```{r packages-loading}
 library(matrixStats) # CRAN v0.61.0
 
+library(tidyverse) # CRAN v1.3.1
 library(cmdstanr) # [github::stan-dev/cmdstanr] v0.4.0.9000
 library(brms) # CRAN v2.16.3
 
-library(tidyverse) # CRAN v1.3.1
 
 library(bayesplot) # CRAN v1.8.1
 library(tidybayes) # CRAN v3.0.2
@@ -620,7 +620,7 @@ p_nema <- ggplot(subset(data, dead == 0 & session == 1) %>%
     .width = c(0.001, 0.95), slab_alpha = 0.7,
     point_interval = mean_hdi
   ) +
-  scale_y_continuous("Nematodes") +
+  scale_y_continuous("Number of live nematodes") +
   scale_x_discrete("", labels = c("0 bands", "3 bands", "5 bands")) +
   scale_fill_manual(values = c("#fe9929", "#d95f0e", "#993404")) +
   facet_wrap(~population)
@@ -654,7 +654,7 @@ p_trema <- ggplot(subset(data, dead == 0 & session == 1) %>%
     .width = c(0.001, 0.95), slab_alpha = 0.7,
     point_interval = mean_hdi
   ) +
-  scale_y_continuous("Trematodes") +
+  scale_y_continuous("Number of live trematodes") +
   scale_x_discrete("Shell phenotype (band number)",
     labels = c("0 bands", "3 bands", "5 bands")
   ) +
