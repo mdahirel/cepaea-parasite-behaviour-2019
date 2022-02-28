@@ -204,14 +204,19 @@ max(subset(data_parasite$Trematode_kidney, data_parasite$dead == 0))
 
 # who are the snails infected with Riccardoella mites
 subset(data_parasite, data_parasite$Acari_live_all > 0)
+subset(data_parasite, data_parasite$Acari_live_all > 0)$Acari_live_all
 # or that encapsulated some?
 subset(data_parasite, data_parasite$Acari_encaps > 0)
+subset(data_parasite, data_parasite$Acari_encaps > 0)$Acari_encaps
 
 # what is the proportion of snails that are currently infected yet show no encapsulation (to show that all infections may not show encapsulations):
-table(
+cont_table <- table(
   paste("has encaps", data_parasite$Nematode_encaps_all > 0),
   paste("has live nematodes", data_parasite$Nematode_live_all > 0)
 )
+
+cont_table
+cont_table[1,2]/sum(cont_table[,2])
 ```
 
 ## 2B - univariate model for body size

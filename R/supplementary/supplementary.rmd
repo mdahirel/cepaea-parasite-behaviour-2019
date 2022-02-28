@@ -64,7 +64,7 @@ $$
 $$
 In this model, the intercepts $\beta_{0}$ are the morph-specific intercepts/mean sizes in the sun-exposed habitat, $\beta_{1}$ the morph-specific effect of the shaded habitat, and $\sigma_{r[D]}$ the residual variation.
 
-## Multivariate model of parasites abundance and snail behaviours
+## Multivariate model of parasite abundance and snail behaviours
 
 The multivariate model used to analyse parasite abundances, movement behaviour, food intake and their individual-level correlations can be written as follows.
 
