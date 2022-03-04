@@ -1,6 +1,6 @@
 ---
 title: 'main analysis code for "Morph-dependent effect of nematode infection on host movement in the land snail *Cepaea nemoralis* (Mollusca, Gastropoda)"'
-author: "Maxime Dahirel, Marine Proux, Armelle Ansart, Claudia Gérard (this code by M. Dahirel)"
+author: "Maxime Dahirel, Marine Proux, Claudia Gérard, Armelle Ansart (this code by M. Dahirel)"
 date:
 output: 
   html_document:
@@ -81,7 +81,7 @@ Variables present in the `raw behaviour` dataset only:
 
 - `FPT1`, `FPT2` and `FPT3`: time to cross different thresholds (First Passage Time) during the movement trials. `FPT1` is the time to move 2cm away from starting point (we actually don't count snails as active before they crossed that threshold), `FPT2` and `FPT3` are 5 and 10 cm away (largest possible value is 1200 seconds, since observations were stopped after 20 min);
 
-- `Food_intake`: Quantity of food consumed (out of 1.5 g) during food intake tests.
+- `Food_intake`: Quantity of food consumed (in g, out of 1.5 g) during food intake tests.
 
 
 Variables present in the `raw parasite` dataset only:
@@ -261,6 +261,8 @@ Everything seems in order, let's move to the big parasite-behaviour model
 
 
 ## 2C - preparing the multivariate behaviour-parasite model
+
+(skip to 2D if you don't need/ want to run the tests, and want to go to the actual model)
 
 OK, before building the big multivariate model, let's check that the families we have in mind for each submodel are fine. The trematode and nematode submodels should be OK (we'll still check them later in the full model), let's focus our effort on the movement and food intake model.
 
@@ -504,7 +506,41 @@ pp_check(mod_multi, resp = "Trematodekidney", ndraws = 100)
 pp_check(mod_multi, resp = "scalemvt", ndraws = 100)
 ```
 
-Now we can move to building the tables and the figures
+Now we can move to building the tables and the figures. But before, we can...
+
+## 2E - ...check that correlations involving nematode do not change whether or not we exclude the nematode-free population
+
+(you can skip directly to Part 3 if you don't want to re-run the model below)
+
+To do that, we re-fit the multivariate model, with 2 changes:
+
+- we do not exclude anymore the snails from the shaded population from the nematode sub-model
+
+- we re-include the effect of population in the nematode sub-model
+
+Other than that, everything else is unchanged:
+
+```{r}
+bf_nema_live2 <- bf(Nematode_live_all | subset(session == 1) ~
+0 + band_number + band_number:population + scale_size +
+  (1 | series) + (1 | q | fullID),
+family = poisson
+)
+
+mod_multi2 <- brm(mvbf(bf_food + bf_trema + bf_nema_live2 + bf_mvt),
+    data = data,
+    chains = 4, iter = 4000, warmup = 2000,
+    prior = prior,
+    backend = "cmdstanr", seed = 42,
+    control = list(adapt_delta = 0.99, max_treedepth = 10)
+  )
+
+
+summary(mod_multi2)
+```
+
+Looking at the summary, we find that most fixed effects results are largely the same, and importantly, that the qualitative interpretations of the individual-level correlations between nematode and the other traits remain unchanged. Some of the code below can be repurposed, with slight tweaks, if the reader want to check these statements in more details.
+
 
 # Part 3 - figures, tables and other useful outputs
 
