@@ -1,4 +1,4 @@
-# Snai
+# Natural parasite infections, morph, and behaviour in *Cepaea nemoralis* snails 
 
 DOI TO ADD
 
