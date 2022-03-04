@@ -1,6 +1,6 @@
 # Natural parasite infections, morph, and behaviour in *Cepaea nemoralis* snails 
 
-DOI TO ADD
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.6327265.svg)](https://doi.org/10.5281/zenodo.6327265)
 
 This repository contains all data and code needed to re-do the analyses and figures in our manuscript
 
