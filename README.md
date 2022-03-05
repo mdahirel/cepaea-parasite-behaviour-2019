@@ -8,7 +8,7 @@ This repository contains all data and code needed to re-do the analyses and figu
 
 (by Maxime Dahirel, Marine Proux, Claudia Gérard, Armelle Ansart)
 
-(link to bioRxiv preprint TO ADD)
+(link to bioRxiv preprint: https://doi.org/10.1101/2022.03.04.482990)
 
 data in `.csv` format are in the `data` folder, R script in `.Rmd` format (including detailed information about the analysis) in the `R` folder.
 
