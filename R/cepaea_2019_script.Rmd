@@ -219,6 +219,39 @@ cont_table
 cont_table[1,2]/sum(cont_table[,2])
 ```
 
+We can also (restarting from the raw data) get some info about parasite typical size, since we collected them by size class. We must note however that size was not exactly measured in this protocol, meaning nematodes may be attributed wrongly to the next smaller or larger class. As such, we advise against using these data for anything other than broad inference about the most common size class(es)
+
+```{r nematode-size}
+# create a table where one row = one live nematode, with attributes snail ID, whether the snail was dead before end of experiment, organ the nematode was found in and nematode size class
+nematode_size <- raw_parasite %>% 
+  select(fullID,dead,Nematode_0_1_free,Nematode_1_3_free,Nematode_3_5_free,Nematode_5_plus_free,
+         Nematode_1_3_lung,Nematode_3_5_lung,Nematode_5_plus_lung) %>% 
+  pivot_longer(cols=c(Nematode_0_1_free:Nematode_5_plus_lung),values_to = "N") %>% 
+  mutate(organ=case_when(is.na(str_match(name,"free"))~"lung",
+                         T~"free")) %>% 
+  mutate(sizeclass1=str_split_fixed(name,"_",4)[,2],
+         sizeclass2=str_split_fixed(name,"_",4)[,3]) %>% 
+  mutate(sizeclass=paste(sizeclass1,sizeclass2,sep="_")) %>% 
+  select(fullID,dead,N,organ,sizeclass) %>% 
+  mutate(sizeclass=ordered(sizeclass,levels=c("0_1","1_3","3_5","5_plus"))) %>% 
+  uncount(weights=N)
+
+
+# give the proportions of nematodes found per size class
+table(nematode_size$sizeclass)
+sum(table(nematode_size$sizeclass))
+table(nematode_size$sizeclass)/sum(table(nematode_size$sizeclass))
+
+#split the table by snail was alive versus snail was dead
+by_dead=table(nematode_size$sizeclass,nematode_size$dead)
+
+# give the proportions of nematodes found per size class
+by_dead
+sum(by_dead[,1])
+by_dead[,1]/sum(by_dead[,1])
+```
+
+
 ## 2B - univariate model for body size
 
 ```{r model-size}
