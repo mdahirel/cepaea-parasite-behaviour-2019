@@ -194,6 +194,9 @@ data %>%
 Here we collect some qualitative information about infections:
 
 ```{r parasite-quali-info}
+#how many snails are infected by nematodes in each population?
+table(data_parasite$Nematode_live_all>0,data_parasite$population)
+
 # One individual is dead, how many nematodes did we find in it?
 subset(data_parasite$Nematode_live_all, data_parasite$dead == 1)
 # and trematodes?
@@ -299,7 +302,7 @@ Everything seems in order, let's move to the big parasite-behaviour model
 
 OK, before building the big multivariate model, let's check that the families we have in mind for each submodel are fine. The trematode and nematode submodels should be OK (we'll still check them later in the full model), let's focus our effort on the movement and food intake model.
 
-First, our food intake submodel. Food intake is a proportion of the total food given, so a Beta model should be natural. There are a few zeroes inside which could be a problem, but we can solve that by setting them to the detection limit of our balance and using left-censoring (so we reinterpret the observed zeroes as actually "below the 0.0001g detection threshold"). Let's try:
+First, our food intake submodel. Food intake is a proportion of the total food given, so a Beta model should be natural. There are a few zeroes inside which could be a problem, but we can solve that by setting them to the detection limit of our scale and using left-censoring (so we reinterpret the observed zeroes as actually "below the 0.0001g detection threshold"). Let's try:
 
 ```{r food-model-test}
 data_test <- data %>%
@@ -307,7 +310,7 @@ data_test <- data %>%
 
 
 mod_food_test_beta <- brm(
-  bf(food_test / 1.5 | cens(-1 * (food_test <= 0.0001)) ~ # we use left-censoring to allow zero values in a Beta model
+  bf(food_test / 1.5 | cens(-1 * (food_test <= 0.0001)) ~ # we use left-censoring (-1) to allow zero values in a Beta model
   # in effect we assume that zeroes are actually non-zeroes but below the scale detection limit
   0 + band_number + band_number:population +
     scale_size + (1 | series) + (1 | fullID)),
@@ -549,7 +552,7 @@ To do that, we re-fit the multivariate model, with 2 changes:
 
 - we do not exclude anymore the snails from the shaded population from the nematode sub-model
 
-- we re-include the effect of population in the nematode sub-model
+- as a consequence, we re-include the effect of population in the nematode sub-model
 
 Other than that, everything else is unchanged:
 
@@ -573,6 +576,40 @@ summary(mod_multi2)
 ```
 
 Looking at the summary, we find that most fixed effects results are largely the same, and importantly, that the qualitative interpretations of the individual-level correlations between nematode and the other traits remain unchanged. Some of the code below can be repurposed, with slight tweaks, if the reader want to check these statements in more details.
+
+## 2F - estimating repeatabilities
+
+
+```{r}
+varcomps_mvt <- tibble(
+  VF = rowVars(posterior_linpred(mod_multi, re_formula = NA, resp = "scalemvt")),
+  VI = VarCorr(mod_multi, summary = FALSE)$fullID$sd[, "scalemvt_Intercept"]^2,
+  Vseries = VarCorr(mod_multi, summary = FALSE)$series$sd[, "scalemvt_Intercept"]^2,
+  VR = as_tibble(as_draws_df(mod_multi, variable = "sigma_scalemvt"))$sigma_scalemvt^2
+) %>%
+  mutate(
+    trait = "mvt",
+    VP = VF + VI + Vseries + VR
+  )%>%
+  mutate(repeatability = VI/VP)
+
+mean_hdi(varcomps_mvt$repeatability)
+
+## and here for the food intake model
+varcomps_food <- tibble(
+  VF = rowVars(posterior_linpred(mod_multi, re_formula = NA, resp = "scalefood")),
+  VI = VarCorr(mod_multi, summary = FALSE)$fullID$sd[, "scalefood_Intercept"]^2,
+  Vseries = VarCorr(mod_multi, summary = FALSE)$series$sd[, "scalefood_Intercept"]^2,
+  VR = as_tibble(as_draws_df(mod_multi, variable = "sigma_scalefood"))$sigma_scalefood^2
+) %>%
+  mutate(
+    trait = "food",
+    VP = VF + VI + Vseries + VR
+  )%>%
+  mutate(repeatability = VI/VP)
+
+mean_hdi(varcomps_food$repeatability)
+```
 
 
 # Part 3 - figures, tables and other useful outputs
@@ -897,6 +934,8 @@ summary_mod <- mod_multi %>%
 summary_mod %>%
   print(n = Inf)
 ```
+(we can here easily replace `model_multi` by `model_multi2` if we want to see whether this summary changes when we re-include the shaded population in the nematode sub-model. Answer: not really)
+
 
 Then we use it to built Table 1
 ```{r table1}
