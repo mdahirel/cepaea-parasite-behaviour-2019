@@ -1,5 +1,5 @@
 ---
-title: 'Supplementary Material for "Morph-dependent effect of nematode infection on host movement in the land snail *Cepaea nemoralis* (Mollusca, Gastropoda)"'
+title: 'Supplementary Material for "Morph-dependent nematode infection and its association with host movement in the land snail *Cepaea nemoralis* (Mollusca, Gastropoda)"'
 author: "Maxime Dahirel, Marine Proux, Claudia Gérard, Armelle Ansart"
 date:
 header-includes:

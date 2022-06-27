@@ -1,5 +1,5 @@
 ---
-title: 'main analysis code for "Morph-dependent effect of nematode infection on host movement in the land snail *Cepaea nemoralis* (Mollusca, Gastropoda)"'
+title: 'main analysis code for "Morph-dependent nematode infection and its association with host movement in the land snail *Cepaea nemoralis* (Mollusca, Gastropoda)"'
 author: "Maxime Dahirel, Marine Proux, Claudia Gérard, Armelle Ansart (this code by M. Dahirel)"
 date:
 output: 
